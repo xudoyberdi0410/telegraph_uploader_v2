@@ -3,6 +3,7 @@
   // Импортируем OnFileDrop для обработки перетаскивания из ОС
   import { OnFileDrop } from '../wailsjs/runtime/runtime'; 
   import { OpenFolderDialog, OpenFilesDialog, UploadChapter, CreateTelegraphPage } from '../wailsjs/go/main/App';
+    import ImageCard from './components/ImageCard.svelte';
 
   let images = [];       
   let chapterTitle = ''; 
@@ -233,31 +234,15 @@
     <div class="grid" class:dimmed={isProcessing}>
         {#each images as img, index (img.id)}
             <!-- svelte-ignore a11y-no-static-element-interactions -->
-            <div 
-                class="card" 
-                class:selected={img.selected}
-                draggable={!isProcessing}
+            <ImageCard 
+                {img} 
+                {index} 
+                {isProcessing}
+                on:removeImage={() => removeImage(index)}
                 on:dragstart={(e) => handleDragStart(e, index)}
                 on:dragover={(e) => handleDragOver(e, index)}
                 on:dragend={handleDragEnd}
-            >
-                <div class="card-inner">
-                    <!-- Крестик удаления -->
-                    <button class="close-btn" on:click|stopPropagation={() => removeImage(index)} title="Убрать из списка">×</button>
-
-                    <!-- Чекбокс -->
-                    <div class="checkbox-wrapper">
-                        <input type="checkbox" bind:checked={img.selected}>
-                    </div>
-
-                    <!-- Картинка -->
-                    <div class="img-wrapper">
-                         <img src={img.thumbnailSrc} alt={img.name} loading="lazy">
-                    </div>
-                    
-                    <div class="name">{img.name}</div>
-                </div>
-            </div>
+            />
         {/each}
         
         {#if images.length === 0}
@@ -347,37 +332,7 @@
   .dimmed { opacity: 0.5; pointer-events: none; }
 
   /* Карточка с фиксированным соотношением сторон */
-  .card { 
-      background: var(--card-bg); 
-      border-radius: 6px; 
-      /* Вот тут магия: соотношение сторон 2 к 3 (ширина / высота) */
-      aspect-ratio: 2 / 3; 
-      position: relative; 
-      cursor: grab;
-      border: 2px solid transparent;
-      transition: border-color 0.1s;
-      overflow: hidden;
-  }
   
-  .card:active { cursor: grabbing; }
-  
-  /* Если не выбрано - серый */
-  .card:not(.selected) { opacity: 0.5; filter: grayscale(1); }
-  
-  .card.selected:hover { border-color: var(--accent); }
-
-  /* Внутренности карточки (растянуты на всю высоту) */
-  .card-inner {
-      width: 100%; height: 100%;
-      display: flex; flex-direction: column;
-  }
-
-  .img-wrapper {
-      flex-grow: 1; /* Занимает всё доступное место */
-      overflow: hidden;
-      position: relative;
-      background: #000;
-  }
 
   img { 
       width: 100%; height: 100%; 
@@ -386,33 +341,10 @@
       pointer-events: none; /* ВАЖНО для Drag&Drop */
   }
 
-  .name { 
-      padding: 6px; 
-      font-size: 0.75rem; 
-      color: #888; 
-      background: #252525;
-      text-align: center; 
-      overflow: hidden; 
-      text-overflow: ellipsis; 
-      white-space: nowrap; 
-      flex-shrink: 0; /* Имя не сжимается */
-      pointer-events: none; /* ВАЖНО для Drag&Drop */
-  }
+  
 
-  .checkbox-wrapper {
-      position: absolute; top: 6px; left: 6px; z-index: 10;
-  }
-  .checkbox-wrapper input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); }
-
-  .close-btn {
-      position: absolute; top: 6px; right: 6px; z-index: 10;
-      background: rgba(0,0,0,0.6); color: #fff; border: none;
-      width: 24px; height: 24px; border-radius: 50%;
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
-      opacity: 0; transition: opacity 0.2s; font-size: 16px;
-  }
-  .card:hover .close-btn { opacity: 1; }
-  .close-btn:hover { background: #ff4444; }
+ 
+  
 
   .empty-state {
       grid-column: 1 / -1; display: flex; justify-content: center; align-items: center;
