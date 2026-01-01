@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json" 
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,19 +23,19 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// Config - структура для хранения настроек из JSON
+// Config - структура настроек
 type Config struct {
-	R2AccountId  string `json:"r2_account_id"`
-	R2AccessKey  string `json:"r2_access_key"`
-	R2SecretKey  string `json:"r2_secret_key"`
-	BucketName   string `json:"bucket_name"`
-	PublicDomain string `json:"public_domain"`
+	R2AccountId    string `json:"r2_account_id"`
+	R2AccessKey    string `json:"r2_access_key"`
+	R2SecretKey    string `json:"r2_secret_key"`
+	BucketName     string `json:"bucket_name"`
+	PublicDomain   string `json:"public_domain"`
+	TelegraphToken string `json:"telegraph_token"` // Опционально: токен Telegraph
 }
 
 type App struct {
-	ctx            context.Context
-	telegraphToken string
-	config         Config // Храним загруженный конфиг здесь
+	ctx    context.Context
+	config Config
 }
 
 func NewApp() *App {
@@ -47,43 +47,49 @@ func (a *App) startup(ctx context.Context) {
 
 	// 1. Загружаем конфиг
 	if err := a.loadConfig(); err != nil {
-		// Показываем нативный диалог ошибки, если конфиг не найден
+		// Критическая ошибка - показываем диалог
 		wailsRuntime.MessageDialog(ctx, wailsRuntime.MessageDialogOptions{
-			Type:    wailsRuntime.ErrorDialog,
-			Title:   "Ошибка конфигурации",
-			Message: "Не удалось загрузить config.json: " + err.Error(),
+			Type:          wailsRuntime.ErrorDialog,
+			Title:         "Ошибка конфигурации",
+			Message:       fmt.Sprintf("Не удалось загрузить config.json:\n%s\n\nУбедитесь, что файл находится рядом с программой.", err.Error()),
+			Buttons:       []string{"OK"},
+			DefaultButton: "OK",
 		})
-		return
-	}
-
-	// 2. Инициализируем Telegraph
-	token, err := createTelegraphAccount("MangaUploader")
-	if err == nil {
-		a.telegraphToken = token
-	} else {
-		fmt.Println("Ошибка создания Telegraph аккаунта:", err)
 	}
 }
 
-// Метод для чтения config.json
+// loadConfig ищет config.json рядом с исполняемым файлом
 func (a *App) loadConfig() error {
-	// Пытаемся открыть файл в текущей папке
-	file, err := os.Open("config.json")
+	// Получаем путь к исполняемому файлу
+	ex, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	exPath := filepath.Dir(ex)
+
+	// Сначала пробуем найти конфиг рядом с .exe
+	configPath := filepath.Join(exPath, "config.json")
+	
+	// Если не нашли (например, при wails dev), пробуем в текущей директории
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		configPath = "config.json"
+	}
+
+	file, err := os.Open(configPath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
 	bytesValue, _ := io.ReadAll(file)
-	
 	err = json.Unmarshal(bytesValue, &a.config)
 	if err != nil {
-		return err
+		return fmt.Errorf("ошибка парсинга JSON: %v", err)
 	}
 
-	// Простая валидация
-	if a.config.R2AccountId == "" || a.config.R2AccessKey == "" {
-		return fmt.Errorf("поля конфигурации пусты")
+	// Валидация обязательных полей
+	if a.config.R2AccountId == "" || a.config.R2AccessKey == "" || a.config.R2SecretKey == "" {
+		return fmt.Errorf("в config.json не заполнены ключи R2")
 	}
 
 	return nil
@@ -120,7 +126,11 @@ type TelegraphNode struct {
 // === МЕТОДЫ ===
 
 func (a *App) UploadChapter(filePaths []string) UploadResult {
-	// Используем настройки из загруженного конфига (a.config)
+	// Проверка перед стартом
+	if a.config.R2AccountId == "" {
+		return UploadResult{Success: false, Error: "Конфигурация не загружена. Проверьте config.json"}
+	}
+
 	endpoint := fmt.Sprintf("%s.r2.cloudflarestorage.com", a.config.R2AccountId)
 	
 	client, err := minio.New(endpoint, &minio.Options{
@@ -129,7 +139,7 @@ func (a *App) UploadChapter(filePaths []string) UploadResult {
 	})
 
 	if err != nil {
-		return UploadResult{Success: false, Error: "Ошибка R2 Client: " + err.Error()}
+		return UploadResult{Success: false, Error: "Ошибка клиента R2: " + err.Error()}
 	}
 
 	maxWorkers := runtime.NumCPU() * 2
@@ -147,44 +157,44 @@ func (a *App) UploadChapter(filePaths []string) UploadResult {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			// Обработка
+			// 1. Открытие
 			img, err := imaging.Open(srcPath, imaging.AutoOrientation(true))
 			if err != nil {
 				mu.Lock()
-				uploadErrors = append(uploadErrors, fmt.Sprintf("Open err (%s): %v", filepath.Base(srcPath), err))
+				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Open error: %v", filepath.Base(srcPath), err))
 				mu.Unlock()
 				return
 			}
 
+			// 2. Ресайз
 			if img.Bounds().Dx() > 1600 {
 				img = imaging.Resize(img, 1600, 0, imaging.Lanczos)
 			}
 
+			// 3. Кодирование
 			buf := new(bytes.Buffer)
 			err = imaging.Encode(buf, img, imaging.JPEG, imaging.JPEGQuality(80))
 			if err != nil {
 				mu.Lock()
-				uploadErrors = append(uploadErrors, fmt.Sprintf("Encode err: %v", err))
+				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Encode error: %v", filepath.Base(srcPath), err))
 				mu.Unlock()
 				return
 			}
 
-			// Загрузка
+			// 4. Загрузка
 			fileName := fmt.Sprintf("%d_%s", time.Now().UnixNano(), filepath.Base(srcPath))
 			
-			// Используем имя бакета из конфига
 			_, err = client.PutObject(context.Background(), a.config.BucketName, fileName, buf, int64(buf.Len()), minio.PutObjectOptions{
 				ContentType: "image/jpeg",
 			})
 			if err != nil {
 				mu.Lock()
-				uploadErrors = append(uploadErrors, fmt.Sprintf("Upload err: %v", err))
+				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Upload error: %v", filepath.Base(srcPath), err))
 				mu.Unlock()
 				return
 			}
 
-			// Используем домен из конфига
-			// Убираем слэш в конце домена, если он есть, чтобы не было двойного //
+			// 5. Формирование ссылки
 			domain := strings.TrimRight(a.config.PublicDomain, "/")
 			finalUrl := fmt.Sprintf("%s/%s", domain, fileName)
 			
@@ -197,22 +207,26 @@ func (a *App) UploadChapter(filePaths []string) UploadResult {
 	wg.Wait()
 
 	if len(uploadErrors) > 0 {
-		return UploadResult{Success: false, Error: fmt.Sprintf("Ошибки (%d): %v", len(uploadErrors), uploadErrors[0])}
+		return UploadResult{Success: false, Error: fmt.Sprintf("Ошибок: %d. Первая: %s", len(uploadErrors), uploadErrors[0])}
 	}
 
 	return UploadResult{Success: true, Links: uploadedLinks}
 }
 
-// 2. Создание статьи в Telegraph
 func (a *App) CreateTelegraphPage(title string, imageUrls []string) string {
-	if a.telegraphToken == "" {
-		t, err := createTelegraphAccount("MangaUploader")
+	// Определяем токен: либо из конфига, либо создаем новый
+	token := a.config.TelegraphToken
+	if token == "" {
+		var err error
+		token, err = createTelegraphAccount("MangaUploader")
 		if err != nil {
-			return "Ошибка: Не удалось авторизоваться в Telegraph"
+			return "Ошибка создания аккаунта Telegraph: " + err.Error()
 		}
-		a.telegraphToken = t
+		// В идеале тут можно сохранить токен обратно в config.json, но пока не будем усложнять
+		fmt.Println("ВНИМАНИЕ: Создан новый временный токен Telegraph:", token)
 	}
 
+	// Формируем контент
 	var content []TelegraphNode
 	for _, link := range imageUrls {
 		node := TelegraphNode{
@@ -226,19 +240,19 @@ func (a *App) CreateTelegraphPage(title string, imageUrls []string) string {
 
 	contentJson, err := json.Marshal(content)
 	if err != nil {
-		return "JSON Error: " + err.Error()
+		return "Ошибка JSON: " + err.Error()
 	}
 
 	apiURL := "https://api.telegra.ph/createPage"
 	data := url.Values{}
-	data.Set("access_token", a.telegraphToken)
+	data.Set("access_token", token)
 	data.Set("title", title)
 	data.Set("content", string(contentJson))
 	data.Set("return_content", "false")
 
 	resp, err := http.PostForm(apiURL, data)
 	if err != nil {
-		return "Net Error: " + err.Error()
+		return "Ошибка сети Telegraph: " + err.Error()
 	}
 	defer resp.Body.Close()
 
@@ -246,11 +260,11 @@ func (a *App) CreateTelegraphPage(title string, imageUrls []string) string {
 	
 	var tgResp TelegraphResponse
 	if err := json.Unmarshal(body, &tgResp); err != nil {
-		return "Telegraph API Error: " + string(body)
+		return "Ошибка ответа API: " + string(body)
 	}
 
 	if !tgResp.Ok {
-		return "Telegraph Error: " + tgResp.Error
+		return "Telegraph API Error: " + tgResp.Error
 	}
 
 	return tgResp.Result.Url
@@ -260,7 +274,7 @@ func createTelegraphAccount(shortName string) (string, error) {
 	apiURL := "https://api.telegra.ph/createAccount"
 	data := url.Values{}
 	data.Set("short_name", shortName)
-	data.Set("author_name", "Manga Bot")
+	data.Set("author_name", "MangaBot")
 
 	resp, err := http.PostForm(apiURL, data)
 	if err != nil {
@@ -279,12 +293,12 @@ func createTelegraphAccount(shortName string) (string, error) {
 	json.Unmarshal(body, &acc)
 	
 	if !acc.Ok {
-		return "", fmt.Errorf("failed")
+		return "", fmt.Errorf("не удалось создать аккаунт")
 	}
 	return acc.Result.AccessToken, nil
 }
 
-// 3. Диалог
+// Диалог выбора папки (без изменений)
 func (a *App) OpenFolderDialog() (ChapterResponse, error) {
 	selection, err := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
 		Title: "Выберите папку с главой",
@@ -306,6 +320,25 @@ func (a *App) OpenFolderDialog() (ChapterResponse, error) {
 		Images:     images,
 		ImageCount: len(images),
 	}, nil
+}
+
+// НОВЫЙ МЕТОД: Выбор отдельных файлов
+func (a *App) OpenFilesDialog() ([]string, error) {
+	selection, err := wailsRuntime.OpenMultipleFilesDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "Выберите изображения",
+		Filters: []wailsRuntime.FileFilter{
+			{
+				DisplayName: "Images",
+				Pattern:     "*.jpg;*.jpeg;*.png;*.webp",
+			},
+		},
+	})
+	
+	if err != nil {
+		return nil, err
+	}
+
+	return selection, nil
 }
 
 func getImagesInDir(dirPath string) ([]string, error) {

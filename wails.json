@@ -9,5 +9,13 @@
   "author": {
     "name": "Khudoberdi",
     "email": "xudoyberdi0410@gmail.com"
+  },
+  "info": {
+    "productName": "Manga Uploader",
+    "companyName": "Не знайки",
+    "productVersion": "1.0.0",
+    "fileVersion": "1.0.0",
+    "comments": "Uploads manga to R2 and creates Telegraph articles",
+    "copyright": "Copyright © 2026"
   }
 }
