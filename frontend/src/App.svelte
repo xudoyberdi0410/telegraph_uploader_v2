@@ -39,6 +39,7 @@
           id: fullPath, // Уникальный ID
           name: fileName,
           thumbnailSrc: `/thumbnail/${safePath}`,
+          
           originalPath: fullPath,
           selected: true
         };
