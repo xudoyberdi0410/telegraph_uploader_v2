@@ -3,6 +3,7 @@ module telegraph_uploader_v2
 go 1.23.0
 
 require (
+	github.com/chai2010/webp v1.4.0
 	github.com/disintegration/imaging v1.6.2
 	github.com/minio/minio-go/v7 v7.0.97
 	github.com/wailsapp/wails/v2 v2.11.0

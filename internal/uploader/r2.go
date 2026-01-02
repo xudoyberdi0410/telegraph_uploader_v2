@@ -1,19 +1,16 @@
 package uploader
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
-	"time"
 
-    // Замените на название вашего модуля из go.mod
+	// Замените на название вашего модуля из go.mod
 	"telegraph_uploader_v2/internal/config"
 
-	"github.com/disintegration/imaging"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -34,7 +31,7 @@ type R2Uploader struct {
 // New создает новый экземпляр загрузчика. Вызывается 1 раз при старте.
 func New(cfg *config.Config) (*R2Uploader, error) {
 	endpoint := fmt.Sprintf("%s.r2.cloudflarestorage.com", cfg.R2AccountId)
-	
+
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.R2AccessKey, cfg.R2SecretKey, ""),
 		Secure: true,
@@ -51,8 +48,6 @@ func New(cfg *config.Config) (*R2Uploader, error) {
 
 // UploadChapter теперь метод структуры, а не просто функция
 func (u *R2Uploader) UploadChapter(filePaths []string) UploadResult {
-	// Конфиг и клиент уже есть внутри 'u', не нужно их проверять/создавать заново
-
 	maxWorkers := runtime.NumCPU() * 2
 	sem := make(chan struct{}, maxWorkers)
 	var wg sync.WaitGroup
@@ -68,38 +63,19 @@ func (u *R2Uploader) UploadChapter(filePaths []string) UploadResult {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			// 1. Открытие
-			img, err := imaging.Open(srcPath, imaging.AutoOrientation(true))
+			// ШАГ 1: Делегируем обработку изображения другой функции
+			// Код стал чище: мы просто говорим "подготовь картинку"
+			processed, err := processImage(srcPath)
 			if err != nil {
 				mu.Lock()
-				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Open error: %v", filepath.Base(srcPath), err))
+				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Processing failed: %v", filepath.Base(srcPath), err))
 				mu.Unlock()
 				return
 			}
 
-			// 2. Ресайз (чуть оптимизировал: если меньше 1600, не трогаем)
-			if img.Bounds().Dx() > 1600 {
-				img = imaging.Resize(img, 1600, 0, imaging.Lanczos)
-			}
-
-			// 3. Кодирование
-			buf := new(bytes.Buffer)
-			// Quality 80 - оптимальный баланс
-			err = imaging.Encode(buf, img, imaging.JPEG, imaging.JPEGQuality(80))
-			if err != nil {
-				mu.Lock()
-				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Encode error: %v", filepath.Base(srcPath), err))
-				mu.Unlock()
-				return
-			}
-
-			// 4. Загрузка
-			// Используем u.cfg для бакета
-			fileName := fmt.Sprintf("%d_%s", time.Now().UnixNano(), filepath.Base(srcPath))
-
-			// Используем u.client
-			_, err = u.client.PutObject(context.Background(), u.cfg.BucketName, fileName, buf, int64(buf.Len()), minio.PutObjectOptions{
-				ContentType: "image/jpeg",
+			// ШАГ 2: Загрузка (сетевая операция)
+			_, err = u.client.PutObject(context.Background(), u.cfg.BucketName, processed.FileName, processed.Content, processed.Size, minio.PutObjectOptions{
+				ContentType: "image/webp",
 			})
 			if err != nil {
 				mu.Lock()
@@ -108,10 +84,10 @@ func (u *R2Uploader) UploadChapter(filePaths []string) UploadResult {
 				return
 			}
 
-			// 5. Формирование ссылки
+			// ШАГ 3: Формирование ссылки
 			domain := strings.TrimRight(u.cfg.PublicDomain, "/")
-			finalUrl := fmt.Sprintf("%s/%s", domain, fileName)
-			
+			finalUrl := fmt.Sprintf("%s/%s", domain, processed.FileName)
+
 			mu.Lock()
 			uploadedLinks[index] = finalUrl
 			mu.Unlock()
