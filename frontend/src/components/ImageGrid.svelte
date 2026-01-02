@@ -36,38 +36,54 @@
         e.target.style.opacity = "1";
     }
 </script>
-
-<div class="grid" class:dimmed={isProcessing}>
-    {#each $images as img, index (img.id)}
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <ImageCard
-            {img}
-            {index}
-            {isProcessing}
-            on:removeImage={() => removeImageByIndex(index)}
-            on:dragstart={(e) => handleDragStart(e, index)}
-            on:dragover={(e) => handleDragOver(e, index)}
-            on:dragend={handleDragEnd}
-        />
-    {/each}
-
-    {#if $images.length === 0}
-        <div class="empty-state">
-            <p>Перетащите сюда файлы или выберите папку</p>
-        </div>
-    {/if}
+<div class="scrollable">
+    <div class="grid" class:dimmed={isProcessing}>
+        {#each $images as img, index (img.id)}
+            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <ImageCard
+                {img}
+                {isProcessing}
+                on:removeImage={() => removeImageByIndex(index)}
+                on:dragstart={(e) => handleDragStart(e, index)}
+                on:dragover={(e) => handleDragOver(e, index)}
+                on:dragend={handleDragEnd}
+            />
+        {/each}
+    
+        {#if $images.length === 0}
+            <div class="empty-state">
+                <p>Перетащите сюда файлы или выберите папку</p>
+            </div>
+        {/if}
+    </div>
 </div>
 
 <style>
+    .scrollable {
+        flex: 1;
+        overflow-y: auto;
+        width: 100%;
+    }
     .grid {
         display: grid;
-        /* Минимальная ширина 150px, карточки будут заполнять пространство */
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        /* Колонки ровно 150px, сколько влезет в ряд */
+        grid-template-columns: repeat(auto-fill, 150px);
+        
+        /* ВАЖНО: Высота ряда подстраивается под содержимое */
+        grid-auto-rows: auto;
+        
         gap: 15px;
         padding: 1.5rem;
-        overflow-y: auto;
+        
+        /* ВАЖНО: Прижимаем карточки к верху, чтобы они не растягивались на всю высоту ряда */
+        align-items: start;
+        
+        /* Центрируем всю сетку, если сбоку остается место */
+        justify-content: center;
+        
         flex: 1;
     }
+
     .empty-state {
         grid-column: 1 / -1;
         display: flex;

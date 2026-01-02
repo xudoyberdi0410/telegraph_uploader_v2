@@ -44,6 +44,11 @@ func main() {
 			BackdropType:         windows.Mica,
 		},
 		LogLevel: logger.ERROR,
+
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop: true,
+			DisableWebViewDrop: true,
+		},
 	})
 
 	if err != nil {

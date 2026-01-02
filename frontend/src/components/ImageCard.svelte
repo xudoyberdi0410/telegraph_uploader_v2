@@ -1,6 +1,5 @@
 <script>
     export let img;
-    export let index;
     export let isProcessing;
 
     import { createEventDispatcher } from "svelte";
@@ -35,7 +34,6 @@
                 alt={img.name}
                 loading="lazy"
                 decoding="async"
-                style="width: 100%; height: 100%; object-fit: contain;"
             />
         </div>
 
@@ -47,13 +45,25 @@
     .card {
         background: var(--card-bg);
         border-radius: 6px;
-        aspect-ratio: 2 / 3;
+        
+        /* Ширина фиксируется сеткой, высота — авто */
+        width: 100%;
+        height: auto; 
+        
         position: relative;
         cursor: grab;
         border: 2px solid transparent;
         transition: border-color 0.1s;
-        overflow: hidden;
+        
+        /* Чтобы скругления углов работали */
+        overflow: hidden; 
+        
+        /* Убираем лишние отступы у блочных элементов */
+        display: flex;
+        flex-direction: column;
     }
+
+    /* Убираем aspect-ratio, который мог вызывать наложение! */
 
     .card:active {
         cursor: grabbing;
@@ -68,18 +78,41 @@
 
     .card-inner {
         width: 100%;
-        height: 100%;
+        /* Высота должна быть авто, не 100% */
+        height: auto;
         display: flex;
         flex-direction: column;
     }
 
     .img-wrapper {
-        flex-grow: 1;
-        overflow: hidden;
-        position: relative;
-        background: #000;
+        width: 100%;
+        height: auto;
+        display: block; /* Убираем лишние флекс-отступы */
+        line-height: 0; /* Убираем отступ под картинкой */
     }
 
+    img {
+        width: 100%;
+        height: auto; /* Картинка определяет высоту */
+        display: block;
+        object-fit: contain;
+    }
+
+    .name {
+        padding: 6px;
+        font-size: 0.75rem;
+        color: #888;
+        background: #252525;
+        text-align: center;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        
+        /* Имя всегда снизу */
+        width: 100%;
+    }
+
+    /* Кнопки и чекбоксы остаются без изменений */
     .close-btn {
         position: absolute;
         top: 6px;
@@ -105,19 +138,6 @@
     }
     .close-btn:hover {
         background: #ff4444;
-    }
-
-    .name {
-        padding: 6px;
-        font-size: 0.75rem;
-        color: #888;
-        background: #252525;
-        text-align: center;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        flex-shrink: 0;
-        pointer-events: none;
     }
 
     .checkbox-wrapper {

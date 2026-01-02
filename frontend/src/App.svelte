@@ -1,14 +1,12 @@
 <script>
     import { onMount } from "svelte";
     import { OnFileDrop } from "../wailsjs/runtime/runtime";
-
-    // Компоненты
+    
     import Header from "./components/Header.svelte";
     import SuccessBox from "./components/SuccessBox.svelte";
     import StatusBar from "./components/StatusBar.svelte";
     import ImageGrid from "./components/ImageGrid.svelte";
 
-    // Наш новый Store (импортируем переменные и функции)
     import {
         images,
         chapterTitle,
@@ -22,28 +20,27 @@
         selectFolderAction,
     } from "./stores/appStore.js";
 
-    // --- Инициализация ---
     onMount(() => {
-        window.ondragover = function (e) {
-            e.preventDefault(); // Это ОБЯЗАТЕЛЬНО, чтобы сработал Drop
-            // Можно визуально подсветить окно, если нужно
-        };
-
-        window.ondrop = function (e) {
-            e.preventDefault(); // Чтобы браузер не пытался открыть файл как картинку
-        };
-        console.log("OnFileDrop type:", typeof OnFileDrop);
+        // ВАЖНО: убираем window.ondragover и window.ondrop
+        // Они блокируют работу Wails OnFileDrop!
+        
+        console.log("Initializing OnFileDrop...");
+        
+        // Wails OnFileDrop работает на уровне нативного окна
         OnFileDrop((x, y, paths) => {
-            console.log("OnFileDrop type:", typeof OnFileDrop);
-            console.log("Files dropped from OS:", paths);
-            if ($isProcessing) return;
+            console.log("Files dropped:", paths);
+            if ($isProcessing) {
+                console.log("Processing in progress, ignoring drop");
+                return;
+            }
             addImagesFromPaths(paths);
-        }, true);
+        }, true); // true = включаем обработчик
     });
 
     function confirmClear() {
         if (confirm("Очистить список?")) clearAll();
     }
+    
     function copyLink() {
         navigator.clipboard.writeText($finalUrl);
         statusMsg.set("Ссылка скопирована!");
