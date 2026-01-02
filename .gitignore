@@ -6,3 +6,5 @@ wailsjs/
 
 # User config with secrets
 config.json
+api.txt
+project_assembler.py
