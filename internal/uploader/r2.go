@@ -28,6 +28,13 @@ type R2Uploader struct {
 	cfg    *config.Config
 }
 
+type ResizeSettings struct {
+	Resize	bool	`json:"resize"`
+	ResizeTo int	`json:"resize_to"`
+	WebpQuality int	`json:"webp_quality"`
+}
+
+
 // New создает новый экземпляр загрузчика. Вызывается 1 раз при старте.
 func New(cfg *config.Config) (*R2Uploader, error) {
 	endpoint := fmt.Sprintf("%s.r2.cloudflarestorage.com", cfg.R2AccountId)
@@ -47,7 +54,7 @@ func New(cfg *config.Config) (*R2Uploader, error) {
 }
 
 // UploadChapter теперь метод структуры, а не просто функция
-func (u *R2Uploader) UploadChapter(filePaths []string) UploadResult {
+func (u *R2Uploader) UploadChapter(filePaths []string, resizeSettings ResizeSettings) UploadResult {
 	maxWorkers := runtime.NumCPU() * 2
 	sem := make(chan struct{}, maxWorkers)
 	var wg sync.WaitGroup
@@ -65,7 +72,7 @@ func (u *R2Uploader) UploadChapter(filePaths []string) UploadResult {
 
 			// ШАГ 1: Делегируем обработку изображения другой функции
 			// Код стал чище: мы просто говорим "подготовь картинку"
-			processed, err := processImage(srcPath)
+			processed, err := processImage(srcPath, resizeSettings)
 			if err != nil {
 				mu.Lock()
 				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Processing failed: %v", filepath.Base(srcPath), err))

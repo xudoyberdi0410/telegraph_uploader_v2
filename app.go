@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"log"
+	"encoding/json"
+	"io"
 
 	"telegraph_uploader_v2/internal/config"
 	"telegraph_uploader_v2/internal/uploader"
@@ -60,12 +62,12 @@ type ChapterResponse struct {
 
 // === МЕТОДЫ ===
 
-func (a *App) UploadChapter(filePaths []string) uploader.UploadResult {
+func (a *App) UploadChapter(filePaths []string, resizeSettings uploader.ResizeSettings) uploader.UploadResult {
 	if a.uploader == nil {
 		return uploader.UploadResult{Success: false, Error: "Загрузчик не инициализирован (проверьте config.json)"}
 	}
 	// Просто вызываем метод нашего сервиса
-	return a.uploader.UploadChapter(filePaths)
+	return a.uploader.UploadChapter(filePaths, resizeSettings)
 }
 
 func (a *App) CreateTelegraphPage(title string, imageUrls []string) string {
@@ -134,4 +136,63 @@ func getImagesInDir(dirPath string) ([]string, error) {
 	}
 	sort.Strings(images)
 	return images, nil
+}
+
+func (a *App) getSettingsPath() string {
+	ex, err := os.Executable()
+	if err != nil {
+		return "settings.json"
+	}
+	return filepath.Join(filepath.Dir(ex), "settings.json")
+}
+
+// GetSettings вызывается фронтендом при старте
+func (a *App) GetSettings() uploader.ResizeSettings {
+	// Дефолтные настройки
+	defaults := uploader.ResizeSettings{
+		Resize:      false,
+		ResizeTo:    1600,
+		WebpQuality: 80,
+	}
+
+	path := a.getSettingsPath()
+	
+	// Если файла нет — возвращаем дефолт
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return defaults
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		log.Println("Ошибка открытия настроек:", err)
+		return defaults
+	}
+	defer file.Close()
+
+	bytesValue, _ := io.ReadAll(file)
+	
+	var loaded uploader.ResizeSettings
+	err = json.Unmarshal(bytesValue, &loaded)
+	if err != nil {
+		log.Println("Ошибка парсинга настроек:", err)
+		return defaults
+	}
+
+	return loaded
+}
+
+// SaveSettings вызывается фронтендом при любом изменении
+func (a *App) SaveSettings(s uploader.ResizeSettings) {
+	path := a.getSettingsPath()
+	
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		log.Println("Ошибка кодирования настроек:", err)
+		return
+	}
+
+	err = os.WriteFile(path, data, 0644)
+	if err != nil {
+		log.Println("Ошибка записи настроек:", err)
+	}
 }

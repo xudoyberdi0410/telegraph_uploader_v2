@@ -30,7 +30,7 @@ func main() {
 		// Подключаем наш новый FileLoader для картинок
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
-			Handler: server.NewFileLoader(), // <--- Вот сюда подключаем
+			Handler: server.NewFileLoader(),
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,

@@ -4,7 +4,9 @@ import {
     OpenFilesDialog,
     OpenFolderDialog,
     UploadChapter,
-    CreateTelegraphPage
+    CreateTelegraphPage,
+    GetSettings,
+    SaveSettings
 } from "../../wailsjs/go/main/App"
 
 // 1. Состояние (переменные)
@@ -13,6 +15,43 @@ export const chapterTitle = writable("");
 export const isProcessing = writable(false);
 export const statusMsg = writable("");
 export const finalUrl = writable("");
+export const settings = writable({
+    resize: false,
+    resize_to: 1600,
+    webp_quality: 80
+});
+export const showSettingsModal = writable(false);
+export const id = writable();
+
+let isInitialized = false;
+let saveTimer;
+
+export const loadSettings = async () => {
+    try {
+        const saved = await GetSettings();
+        // Обновляем стор данными из файла
+        settings.set(saved);
+        isInitialized = true; // Разрешаем сохранение
+        console.log("Настройки загружены:", saved);
+    } catch (e) {
+        console.error("Не удалось загрузить настройки:", e);
+        isInitialized = true; 
+    }
+};
+
+loadSettings();
+
+settings.subscribe((val) => {
+    if (!isInitialized) return; // Не сохраняем, пока не загрузили (чтобы не перезатереть дефолтами)
+
+    // Используем debounce (задержку), чтобы не писать на диск 
+    // каждый раз, когда вы двигаете ползунок на 1 пиксель
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+        SaveSettings(val);
+        console.log("Настройки сохранены");
+    }, 500); // Сохраняем через 0.5 сек после последнего изменения
+});
 
 // 2. Логика (Actions)
 
@@ -117,7 +156,7 @@ export const createArticleAction = async () => {
     statusMsg.set(`Загрузка ${filesToUpload.length} изображений...`);
 
     try {
-        const uploadRes = await UploadChapter(filesToUpload);
+        const uploadRes = await UploadChapter(filesToUpload, get(settings));
         if (!uploadRes.success) throw new Error(uploadRes.error);
 
         statusMsg.set("Создание статьи в Telegraph...");

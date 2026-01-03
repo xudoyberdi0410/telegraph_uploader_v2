@@ -3,13 +3,13 @@
     export let copyLink;
 </script>
 
-<div class="success-box">
-    {#if finalUrl}
+{#if finalUrl}
+    <div class="success-box">
         <span>✅ Готово:</span>
         <a href={finalUrl} target="_blank">{finalUrl}</a>
         <button class="btn small" on:click={copyLink}>Copy</button>
-    {/if}
-</div>
+    </div>
+{/if}
 
 <style>
     .success-box {

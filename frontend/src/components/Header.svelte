@@ -1,5 +1,7 @@
 <script>
     import { createEventDispatcher } from "svelte";
+    import Settings from "./Settings.svelte";
+    import { showSettingsModal } from "../stores/appStore";
     const dispatch = createEventDispatcher();
 
     // Входные параметры (props)
@@ -17,6 +19,20 @@
             placeholder="Название главы (например: Глава 1)"
             disabled={isProcessing}
         />
+        <div class="settings-wrapper">
+            <button
+                class="btn"
+                on:click={() => showSettingsModal.set(!$showSettingsModal)}
+                class:active={$showSettingsModal}
+            >
+                Настройки
+            </button>
+
+            <!-- Условный рендеринг: показываем только если true -->
+            {#if $showSettingsModal}
+                <Settings on:close={() => showSettingsModal.set(false)} />
+            {/if}
+        </div>
     </div>
 
     <div class="button-group">
@@ -54,23 +70,27 @@
 <style>
     header {
         background: var(--header-bg);
-        padding: 0 1.5rem;
+        padding: 1rem 1.5rem;
         display: flex;
-        justify-content: space-between;
-        align-items: center;
+        align-items: start;
         border-bottom: 1px solid var(--border);
-        height: var(--header-height);
         flex-shrink: 0;
         gap: 20px;
+        flex-direction: column;
+        z-index: 10; 
     }
-    .input-group input {
+    .input-group {
         width: 100%;
-        padding: 10px;
-        background: #333;
-        border: 1px solid #444;
-        color: white;
-        border-radius: 4px;
+        display: flex;
+        gap: 10px;
+        justify-content: space-between;
+        align-items: center; 
     }
+
+    .settings-wrapper {
+        position: relative; /* Важно: попап будет позиционироваться относительно этого блока */
+    }
+
     .title-input {
         background: #111;
         border: 1px solid #444;
@@ -79,7 +99,7 @@
         border-radius: 4px;
         font-size: 1rem;
         width: 100%;
-        max-width: 350px;
+        flex-grow: 1;
     }
     .title-input:focus {
         outline: none;

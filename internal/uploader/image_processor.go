@@ -19,7 +19,7 @@ type ProcessedImage struct {
 }
 
 // processImage берет путь, обрабатывает картинку и возвращает буфер + имя
-func processImage(srcPath string) (*ProcessedImage, error) {
+func processImage(srcPath string, resizeSettings ResizeSettings) (*ProcessedImage, error) {
 	// 1. Открытие
 	img, err := imaging.Open(srcPath, imaging.AutoOrientation(true))
 	if err != nil {
@@ -27,15 +27,15 @@ func processImage(srcPath string) (*ProcessedImage, error) {
 	}
 
 	// 2. Ресайз (бизнес-логика: ширина > 1200)
-	if img.Bounds().Dx() > 1200 {
-		img = imaging.Resize(img, 1200, 0, imaging.Lanczos)
+	if img.Bounds().Dx() > resizeSettings.ResizeTo && resizeSettings.Resize {
+		img = imaging.Resize(img, resizeSettings.ResizeTo, 0, imaging.Lanczos)
 	}
 
 	// 3. Кодирование в WebP
 	buf := new(bytes.Buffer)
 	err = webp.Encode(buf, img, &webp.Options{
 		Lossless: false,
-		Quality:  60,
+		Quality:  float32(resizeSettings.WebpQuality),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode error: %w", err)
