@@ -1,7 +1,4 @@
-<script>
-    import { onMount } from "svelte";
-    import { OnFileDrop } from "../wailsjs/runtime/runtime";
-    
+<script>    
     import Header from "./components/Header.svelte";
     import SuccessBox from "./components/SuccessBox.svelte";
     import StatusBar from "./components/StatusBar.svelte";
@@ -13,29 +10,11 @@
         isProcessing,
         statusMsg,
         finalUrl,
-        addImagesFromPaths,
         clearAll,
         createArticleAction,
         selectFilesAction,
         selectFolderAction,
     } from "./stores/appStore.js";
-
-    onMount(() => {
-        // ВАЖНО: убираем window.ondragover и window.ondrop
-        // Они блокируют работу Wails OnFileDrop!
-        
-        console.log("Initializing OnFileDrop...");
-        
-        // Wails OnFileDrop работает на уровне нативного окна
-        OnFileDrop((x, y, paths) => {
-            console.log("Files dropped:", paths);
-            if ($isProcessing) {
-                console.log("Processing in progress, ignoring drop");
-                return;
-            }
-            addImagesFromPaths(paths);
-        }, true); // true = включаем обработчик
-    });
 
     function confirmClear() {
         if (confirm("Очистить список?")) clearAll();

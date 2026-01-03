@@ -47,7 +47,6 @@ func main() {
 
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop: true,
-			DisableWebViewDrop: true,
 		},
 	})
 
