@@ -1,6 +1,7 @@
 <script>
     import { createEventDispatcher } from "svelte";
     import Settings from "./Settings.svelte";
+    import History from "./History.svelte";
     import { showSettingsModal } from "../stores/appStore";
     const dispatch = createEventDispatcher();
 
@@ -8,9 +9,13 @@
     export let chapterTitle = "";
     export let isProcessing = false;
     export let hasImages = false;
+    let showHistory = false;
 </script>
 
 <header>
+    {#if showHistory}
+        <History on:close={() => (showHistory = false)} />
+    {/if}
     <div class="input-group">
         <input
             type="text"
@@ -51,20 +56,25 @@
             🖼️ Выбрать файлы
         </button>
         <button
-            class="btn primary"
-            on:click={() => dispatch("create")}
-            disabled={isProcessing || !hasImages}
-        >
-            🚀 Создать страницу
-        </button>
-        <button
             class="btn danger"
             on:click={() => dispatch("clear")}
             disabled={isProcessing || !hasImages}
         >
             🗑️ Очистить
         </button>
+        <button class="btn secondary" on:click={() => (showHistory = true)}>
+            🕒 История
+        </button>
+
+        <button
+            class="btn primary"
+            on:click={() => dispatch("create")}
+            disabled={isProcessing || !hasImages}
+        >
+            🚀 Создать страницу
+        </button>
     </div>
+    
 </header>
 
 <style>
@@ -77,14 +87,14 @@
         flex-shrink: 0;
         gap: 20px;
         flex-direction: column;
-        z-index: 10; 
+        z-index: 10;
     }
     .input-group {
         width: 100%;
         display: flex;
         gap: 10px;
         justify-content: space-between;
-        align-items: center; 
+        align-items: center;
     }
 
     .settings-wrapper {

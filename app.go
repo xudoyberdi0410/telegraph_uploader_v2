@@ -2,55 +2,59 @@ package main
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"log"
-	"encoding/json"
-	"io"
 
 	"telegraph_uploader_v2/internal/config"
-	"telegraph_uploader_v2/internal/uploader"
+	"telegraph_uploader_v2/internal/database"
 	"telegraph_uploader_v2/internal/telegraph"
+	"telegraph_uploader_v2/internal/uploader"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-
 type App struct {
-	ctx    context.Context
-	config *config.Config
+	ctx      context.Context
+	config   *config.Config
 	uploader *uploader.R2Uploader
 	tgClient *telegraph.Client
+	db       *database.Database
 }
 
 func NewApp() *App {
 	cfg, err := config.Load()
-    if err != nil {
-        // Если конфига нет, можно упасть или создать пустой.
-        // Для GUI приложений лучше логировать, но не падать сразу, 
-        // чтобы можно было показать ошибку в окне (если реализуете).
-        log.Println("Warning: could not load config:", err)
-        cfg = &config.Config{} // Пустой конфиг, чтобы не было nil pointer
-    }
+	if err != nil {
+		// Если конфига нет, можно упасть или создать пустой.
+		// Для GUI приложений лучше логировать, но не падать сразу,
+		// чтобы можно было показать ошибку в окне (если реализуете).
+		log.Println("Warning: could not load config:", err)
+		cfg = &config.Config{} // Пустой конфиг, чтобы не было nil pointer
+	}
+
+	dbService, err := database.Init()
+	if err != nil {
+		log.Fatal("Database init error:", err)
+	}
+
 	upl, err := uploader.New(cfg)
 	if err != nil {
 		log.Println("Uploader init error:", err)
-		// Можно оставить nil, но лучше обработать, если ключи не верны
 	}
 	tg := telegraph.New(cfg)
 
-    return 	&App{
-        config: cfg,
+	return &App{
+		config:   cfg,
 		uploader: upl,
 		tgClient: tg,
-    }
+		db:       dbService,
+	}
 }
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 }
-
 
 // === СТРУКТУРЫ ===
 type ChapterResponse struct {
@@ -71,8 +75,12 @@ func (a *App) UploadChapter(filePaths []string, resizeSettings uploader.ResizeSe
 }
 
 func (a *App) CreateTelegraphPage(title string, imageUrls []string) string {
-	// Вызываем метод нашего сервиса
-	return a.tgClient.CreatePage(title, imageUrls)
+	url := a.tgClient.CreatePage(title, imageUrls)
+
+	if len(url) > 4 && url[:4] == "http" {
+		a.db.AddHistory(title, url, len(imageUrls), a.config.TelegraphToken)
+	}
+	return url
 }
 
 // Диалог выбора папки (без изменений)
@@ -110,7 +118,7 @@ func (a *App) OpenFilesDialog() ([]string, error) {
 			},
 		},
 	})
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +138,7 @@ func getImagesInDir(dirPath string) ([]string, error) {
 		}
 		lower := strings.ToLower(entry.Name())
 		if strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".png") ||
-		   strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".webp") {
+			strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".webp") {
 			images = append(images, filepath.Join(dirPath, entry.Name()))
 		}
 	}
@@ -138,61 +146,40 @@ func getImagesInDir(dirPath string) ([]string, error) {
 	return images, nil
 }
 
-func (a *App) getSettingsPath() string {
-	ex, err := os.Executable()
-	if err != nil {
-		return "settings.json"
-	}
-	return filepath.Join(filepath.Dir(ex), "settings.json")
-}
+// func (a *App) getSettingsPath() string {
+// 	ex, err := os.Executable()
+// 	if err != nil {
+// 		return "settings.json"
+// 	}
+// 	return filepath.Join(filepath.Dir(ex), "settings.json")
+// }
 
 // GetSettings вызывается фронтендом при старте
 func (a *App) GetSettings() uploader.ResizeSettings {
-	// Дефолтные настройки
-	defaults := uploader.ResizeSettings{
-		Resize:      false,
-		ResizeTo:    1600,
-		WebpQuality: 80,
-	}
 
-	path := a.getSettingsPath()
-	
-	// Если файла нет — возвращаем дефолт
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return defaults
-	}
+	s := a.db.GetSettings()
 
-	file, err := os.Open(path)
-	if err != nil {
-		log.Println("Ошибка открытия настроек:", err)
-		return defaults
+	return uploader.ResizeSettings{
+		Resize:      s.Resize,
+		ResizeTo:    s.ResizeTo,
+		WebpQuality: s.WebpQuality,
 	}
-	defer file.Close()
-
-	bytesValue, _ := io.ReadAll(file)
-	
-	var loaded uploader.ResizeSettings
-	err = json.Unmarshal(bytesValue, &loaded)
-	if err != nil {
-		log.Println("Ошибка парсинга настроек:", err)
-		return defaults
-	}
-
-	return loaded
 }
 
 // SaveSettings вызывается фронтендом при любом изменении
 func (a *App) SaveSettings(s uploader.ResizeSettings) {
-	path := a.getSettingsPath()
-	
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		log.Println("Ошибка кодирования настроек:", err)
-		return
-	}
 
-	err = os.WriteFile(path, data, 0644)
-	if err != nil {
-		log.Println("Ошибка записи настроек:", err)
-	}
+	a.db.UpdateSettings(database.Settings{
+		Resize:      s.Resize,
+		ResizeTo:    s.ResizeTo,
+		WebpQuality: s.WebpQuality,
+	})
+}
+
+func (a *App) GetHistory(limit int, offset int) []database.HistoryItem {
+	return a.db.GetHistory(limit, offset)
+}
+
+func (a *App) ClearHistory() {
+	a.db.ClearHistory()
 }
