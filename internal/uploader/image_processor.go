@@ -28,7 +28,7 @@ func processImage(srcPath string, resizeSettings ResizeSettings) (*ProcessedImag
 
 	// 2. Ресайз (бизнес-логика: ширина > 1200)
 	if img.Bounds().Dx() > resizeSettings.ResizeTo && resizeSettings.Resize {
-		img = imaging.Resize(img, resizeSettings.ResizeTo, 0, imaging.Lanczos)
+		img = imaging.Resize(img, resizeSettings.ResizeTo, 0, imaging.MitchellNetravali)
 	}
 
 	// 3. Кодирование в WebP

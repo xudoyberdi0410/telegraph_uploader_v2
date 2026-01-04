@@ -8,6 +8,7 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/minio/minio-go/v7 v7.0.97
 	github.com/wailsapp/wails/v2 v2.11.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gorm.io/gorm v1.31.1
 )
 

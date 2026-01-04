@@ -3,6 +3,8 @@ package main
 import (
 	"embed"
 	"log"
+	"os"
+	"io"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/logger"
@@ -10,7 +12,9 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
-    // Импорты ваших новых пакетов
+	"gopkg.in/natefinch/lumberjack.v2"
+
+	// Импорты ваших новых пакетов
 	"telegraph_uploader_v2/internal/server"
 )
 
@@ -18,8 +22,21 @@ import (
 var assets embed.FS
 
 func main() {
-	// Создаем экземпляр приложения
-    // NewApp находится в app.go, он сам внутри себя загрузит конфиг и создаст сервисы
+	logFile := &lumberjack.Logger{
+		Filename: "app.log",
+		MaxSize: 10,
+		MaxBackups: 5,
+		MaxAge: 30,
+		Compress: true,
+	}
+
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+
+	log.SetOutput(multiWriter)
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	log.Println("Приложения запущено")
+	
 	app := NewApp()
 
 	// Создаем и запускаем окно
@@ -27,6 +44,7 @@ func main() {
 		Title:  "Telegraph Uploader v2",
 		Width:  1024,
 		Height: 768,
+
 		// Подключаем наш новый FileLoader для картинок
 		AssetServer: &assetserver.Options{
 			Assets:  assets,

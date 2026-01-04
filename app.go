@@ -25,25 +25,33 @@ type App struct {
 }
 
 func NewApp() *App {
+	log.Println("[App] Starting initialization...")
+
 	cfg, err := config.Load()
 	if err != nil {
 		// Если конфига нет, можно упасть или создать пустой.
-		// Для GUI приложений лучше логировать, но не падать сразу,
-		// чтобы можно было показать ошибку в окне (если реализуете).
-		log.Println("Warning: could not load config:", err)
+		// Для GUI приложений лучше логировать, но не падать сразу.
+		log.Println("[App] Warning: could not load config:", err)
 		cfg = &config.Config{} // Пустой конфиг, чтобы не было nil pointer
+	} else {
+		log.Println("[App] Config loaded successfully")
 	}
 
 	dbService, err := database.Init()
 	if err != nil {
-		log.Fatal("Database init error:", err)
+		log.Fatal("[App] Database init error:", err)
 	}
+	log.Println("[App] Database initialized")
 
 	upl, err := uploader.New(cfg)
 	if err != nil {
-		log.Println("Uploader init error:", err)
+		log.Println("[App] Uploader init error:", err)
+	} else {
+		log.Println("[App] Uploader initialized")
 	}
+
 	tg := telegraph.New(cfg)
+	log.Println("[App] Telegraph client initialized")
 
 	return &App{
 		config:   cfg,
@@ -52,8 +60,10 @@ func NewApp() *App {
 		db:       dbService,
 	}
 }
+
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	log.Println("[App] Application startup complete")
 }
 
 // === СТРУКТУРЫ ===
@@ -67,37 +77,72 @@ type ChapterResponse struct {
 // === МЕТОДЫ ===
 
 func (a *App) UploadChapter(filePaths []string, resizeSettings uploader.ResizeSettings) uploader.UploadResult {
+	log.Printf("[App] UploadChapter called. Files: %d, Settings: %+v", len(filePaths), resizeSettings)
+
 	if a.uploader == nil {
-		return uploader.UploadResult{Success: false, Error: "Загрузчик не инициализирован (проверьте config.json)"}
+		errMsg := "Загрузчик не инициализирован (проверьте config.json)"
+		log.Println("[App] Error: " + errMsg)
+		return uploader.UploadResult{Success: false, Error: errMsg}
 	}
+
 	// Просто вызываем метод нашего сервиса
-	return a.uploader.UploadChapter(filePaths, resizeSettings)
+	result := a.uploader.UploadChapter(filePaths, resizeSettings)
+
+	if result.Success {
+		log.Printf("[App] UploadChapter finished successfully. URLs generated: %d", len(result.Links))
+	} else {
+		log.Printf("[App] UploadChapter failed. Error: %s", result.Error)
+	}
+
+	return result
 }
 
 func (a *App) CreateTelegraphPage(title string, imageUrls []string) string {
+	log.Printf("[App] CreateTelegraphPage called. Title: '%s', Images: %d", title, len(imageUrls))
+
 	url := a.tgClient.CreatePage(title, imageUrls)
 
 	if len(url) > 4 && url[:4] == "http" {
-		a.db.AddHistory(title, url, len(imageUrls), a.config.TelegraphToken)
+		log.Printf("[App] Page created successfully: %s", url)
+		err := a.db.AddHistory(title, url, len(imageUrls), a.config.TelegraphToken)
+		if err != nil {
+			log.Printf("[App] Warning: Failed to save to history: %v", err)
+		} else {
+			log.Println("[App] Saved to history")
+		}
+	} else {
+		log.Printf("[App] Failed to create page. Result URL/Error: %s", url)
 	}
+
 	return url
 }
 
-// Диалог выбора папки (без изменений)
+// Диалог выбора папки
 func (a *App) OpenFolderDialog() (ChapterResponse, error) {
+	log.Println("[App] OpenFolderDialog called")
+
 	selection, err := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
 		Title: "Выберите папку с главой",
 	})
-	if err != nil || selection == "" {
+	if err != nil {
+		log.Printf("[App] OpenDirectoryDialog error: %v", err)
 		return ChapterResponse{}, err
 	}
+	if selection == "" {
+		log.Println("[App] OpenFolderDialog canceled by user")
+		return ChapterResponse{}, nil // Или вернуть ошибку, если фронтенд ждет
+	}
+
+	log.Printf("[App] Folder selected: %s", selection)
 
 	images, err := getImagesInDir(selection)
 	if err != nil {
+		log.Printf("[App] Error reading directory: %v", err)
 		return ChapterResponse{}, err
 	}
 
 	title := filepath.Base(selection)
+	log.Printf("[App] Found %d images in folder '%s'", len(images), title)
 
 	return ChapterResponse{
 		Path:       selection,
@@ -107,8 +152,10 @@ func (a *App) OpenFolderDialog() (ChapterResponse, error) {
 	}, nil
 }
 
-// НОВЫЙ МЕТОД: Выбор отдельных файлов
+// Выбор отдельных файлов
 func (a *App) OpenFilesDialog() ([]string, error) {
+	log.Println("[App] OpenFilesDialog called")
+
 	selection, err := wailsRuntime.OpenMultipleFilesDialog(a.ctx, wailsRuntime.OpenDialogOptions{
 		Title: "Выберите изображения",
 		Filters: []wailsRuntime.FileFilter{
@@ -120,13 +167,21 @@ func (a *App) OpenFilesDialog() ([]string, error) {
 	})
 
 	if err != nil {
+		log.Printf("[App] OpenMultipleFilesDialog error: %v", err)
 		return nil, err
+	}
+
+	if len(selection) == 0 {
+		log.Println("[App] OpenFilesDialog canceled or no files selected")
+	} else {
+		log.Printf("[App] Selected %d files", len(selection))
 	}
 
 	return selection, nil
 }
 
 func getImagesInDir(dirPath string) ([]string, error) {
+	// log.Printf("[App] Scanning directory: %s", dirPath) // Можно раскомментировать для отладки
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
@@ -146,18 +201,11 @@ func getImagesInDir(dirPath string) ([]string, error) {
 	return images, nil
 }
 
-// func (a *App) getSettingsPath() string {
-// 	ex, err := os.Executable()
-// 	if err != nil {
-// 		return "settings.json"
-// 	}
-// 	return filepath.Join(filepath.Dir(ex), "settings.json")
-// }
-
 // GetSettings вызывается фронтендом при старте
 func (a *App) GetSettings() uploader.ResizeSettings {
-
+	log.Println("[App] GetSettings called")
 	s := a.db.GetSettings()
+	log.Printf("[App] Returning settings: %+v", s)
 
 	return uploader.ResizeSettings{
 		Resize:      s.Resize,
@@ -168,18 +216,25 @@ func (a *App) GetSettings() uploader.ResizeSettings {
 
 // SaveSettings вызывается фронтендом при любом изменении
 func (a *App) SaveSettings(s uploader.ResizeSettings) {
+	log.Printf("[App] SaveSettings called: %+v", s)
 
 	a.db.UpdateSettings(database.Settings{
 		Resize:      s.Resize,
 		ResizeTo:    s.ResizeTo,
 		WebpQuality: s.WebpQuality,
 	})
+	log.Println("[App] Settings saved")
 }
 
 func (a *App) GetHistory(limit int, offset int) []database.HistoryItem {
-	return a.db.GetHistory(limit, offset)
+	log.Printf("[App] GetHistory called (limit: %d, offset: %d)", limit, offset)
+	items := a.db.GetHistory(limit, offset)
+	log.Printf("[App] Returned %d history items", len(items))
+	return items
 }
 
 func (a *App) ClearHistory() {
+	log.Println("[App] ClearHistory called")
 	a.db.ClearHistory()
+	log.Println("[App] History cleared")
 }

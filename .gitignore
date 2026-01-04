@@ -8,3 +8,5 @@ wailsjs/
 config.json
 api.txt
 project_assembler.py
+
+*.log

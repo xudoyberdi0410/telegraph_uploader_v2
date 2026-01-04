@@ -109,13 +109,14 @@ func (d *Database) UpdateSettings(s Settings) {
 
 // --- Методы для Истории ---
 
-func (d *Database) AddHistory(title, url string, imgCount int, tgphToken string) {
-	d.conn.Create(&dbHistory{
+func (d *Database) AddHistory(title, url string, imgCount int, tgphToken string) error{
+	err := d.conn.Create(&dbHistory{
 		Title:     title,
 		Url:       url,
 		ImgCount:  imgCount,
 		TgphToken: tgphToken,
-	})
+	}).Error
+	return err
 }
 
 // GetHistory возвращает последние N записей

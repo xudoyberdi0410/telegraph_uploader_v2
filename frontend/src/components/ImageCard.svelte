@@ -51,6 +51,7 @@
         height: auto; 
         
         position: relative;
+        z-index: 0;
         cursor: grab;
         border: 2px solid transparent;
         transition: border-color 0.1s;
