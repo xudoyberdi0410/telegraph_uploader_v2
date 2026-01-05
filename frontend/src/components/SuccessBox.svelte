@@ -1,4 +1,6 @@
 <script>
+    import { createEventDispatcher } from "svelte";
+    const dispatch = createEventDispatcher();
     export let finalUrl;
     export let copyLink;
 </script>
@@ -8,6 +10,9 @@
         <span>✅ Готово:</span>
         <a href={finalUrl} target="_blank">{finalUrl}</a>
         <button class="btn small" on:click={copyLink}>Copy</button>
+        <button class="btn tg-btn" on:click={() => dispatch("openTelegram")}>
+            ✈️ Отправить в Telegram
+        </button>
     </div>
 {/if}
 
@@ -27,5 +32,10 @@
         color: #80e27e;
         text-decoration: none;
         font-weight: bold;
+    }
+    .tg-btn {
+        background: #0088cc;
+        color: white;
+        margin-left: 10px;
     }
 </style>

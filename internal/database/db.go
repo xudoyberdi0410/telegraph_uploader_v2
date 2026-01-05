@@ -40,6 +40,26 @@ type HistoryItem struct {
 	TgphToken string `json:"tgph_token"`
 }
 
+// Добавьте в структуры
+type TgBot struct {
+	ID    uint   `gorm:"primaryKey" json:"id"`
+	Token string `json:"token"`
+	Name  string `json:"name"`
+}
+
+type TgChannel struct {
+	ID        uint   `gorm:"primaryKey" json:"id"`
+	BotID     uint   `json:"bot_id"`
+	ChannelID string `json:"channel_id"` // @username или -100...
+	Title     string `json:"title"`
+}
+
+type TgTemplate struct {
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	Name    string `json:"name"`
+	Content string `json:"content"` // Пример: "Вышла новая глава {{title}}! \n {{url}}"
+}
+
 type Database struct {
 	conn *gorm.DB
 }
@@ -73,7 +93,7 @@ func Init() (*Database, error) {
 	}
 
 	// Автоматическая миграция (создает таблицы, если их нет)
-	err = db.AutoMigrate(&Settings{}, &dbHistory{})
+	err = db.AutoMigrate(&Settings{}, &dbHistory{}, &TgBot{}, &TgChannel{}, &TgTemplate{})
 	if err != nil {
 		return nil, err
 	}
@@ -143,4 +163,34 @@ func (d *Database) GetHistory(limit int, offset int) []HistoryItem {
 func (d *Database) ClearHistory() {
 	// Удаляет все записи (мягкое удаление или полное - тут используем Unscoped для полного)
 	d.conn.Unscoped().Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&dbHistory{})
+}
+
+func (d *Database) GetTgBots() []TgBot {
+	var bots []TgBot
+	d.conn.Find(&bots)
+	return bots
+}
+
+func (d *Database) SaveTgBot(bot TgBot) error {
+	return d.conn.Save(&bot).Error
+}
+
+func (d *Database) GetTgChannels() []TgChannel {
+	var channels []TgChannel
+	d.conn.Find(&channels)
+	return channels
+}
+
+func (d *Database) SaveTgChannel(ch TgChannel) error {
+	return d.conn.Save(&ch).Error
+}
+
+func (d *Database) GetTgTemplates() []TgTemplate {
+	var temps []TgTemplate
+	d.conn.Find(&temps)
+	return temps
+}
+
+func (d *Database) SaveTgTemplate(t TgTemplate) error {
+	return d.conn.Save(&t).Error
 }
