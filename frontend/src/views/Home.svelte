@@ -1,7 +1,5 @@
 <script>
     import Header from "../components/Header.svelte";
-    import SuccessBox from "../components/SuccessBox.svelte";
-    import StatusBar from "../components/StatusBar.svelte";
     import ImageGrid from "../components/ImageGrid.svelte";
     import Footer from "../components/Footer.svelte";
     

@@ -1,39 +1,43 @@
 <script>
-    export let img;
-    export let isProcessing;
-
     import { createEventDispatcher } from "svelte";
+    
+    // Используем $props() для получения параметров в Svelte 5
+    let { img, isProcessing } = $props();
+
     const dispatch = createEventDispatcher();
+
+    // Функция для удаления с остановкой всплытия события (вместо |stopPropagation)
+    function handleRemove(e) {
+        e.stopPropagation();
+        dispatch("removeImage");
+    }
+    
 </script>
 
 <div
     class="card"
     class:selected={img.selected}
     draggable={!isProcessing}
-    on:dragstart
-    on:dragover
-    on:dragend
+    role="listitem"
+    ondragstart={(e) => dispatch('dragstart', e)}
+    ondragover={(e) => dispatch('dragover', e)}
+    ondragend={(e) => dispatch('dragend', e)}
 >
     <div class="card-inner">
-        <!-- Крестик удаления -->
         <button
             class="close-btn"
-            on:click|stopPropagation={() => dispatch("removeImage")}
+            onclick={handleRemove}
             title="Убрать из списка">×</button
         >
 
-        <!-- Чекбокс -->
         <div class="checkbox-wrapper">
             <input type="checkbox" bind:checked={img.selected} />
         </div>
 
-        <!-- Картинка -->
         <div class="img-wrapper">
             <img
                 src={img.thumbnailSrc}
                 alt={img.name}
-                loading="lazy"
-                decoding="async"
             />
         </div>
 
@@ -42,29 +46,21 @@
 </div>
 
 <style>
+    /* Ваши стили остаются без изменений */
     .card {
         background: var(--card-bg);
         border-radius: 6px;
-
-        /* Ширина фиксируется сеткой, высота — авто */
         width: 100%;
         height: auto;
-
         position: relative;
         z-index: 0;
         cursor: grab;
         border: 2px solid transparent;
         transition: border-color 0.1s;
-
-        /* Чтобы скругления углов работали */
         overflow: hidden;
-
-        /* Убираем лишние отступы у блочных элементов */
         display: flex;
         flex-direction: column;
     }
-
-    /* Убираем aspect-ratio, который мог вызывать наложение! */
 
     .card:active {
         cursor: grabbing;
@@ -79,7 +75,6 @@
 
     .card-inner {
         width: 100%;
-        /* Высота должна быть авто, не 100% */
         height: auto;
         display: flex;
         flex-direction: column;
@@ -88,13 +83,13 @@
     .img-wrapper {
         width: 100%;
         height: auto;
-        display: block; /* Убираем лишние флекс-отступы */
-        line-height: 0; /* Убираем отступ под картинкой */
+        display: block;
+        line-height: 0;
     }
 
     img {
         width: 100%;
-        height: auto; /* Картинка определяет высоту */
+        height: auto;
         display: block;
         object-fit: contain;
     }
@@ -108,12 +103,9 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-
-        /* Имя всегда снизу */
         width: 100%;
     }
 
-    /* Кнопки и чекбоксы остаются без изменений */
     .close-btn {
         position: absolute;
         top: 6px;
