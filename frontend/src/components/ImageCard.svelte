@@ -45,20 +45,20 @@
     .card {
         background: var(--card-bg);
         border-radius: 6px;
-        
+
         /* Ширина фиксируется сеткой, высота — авто */
         width: 100%;
-        height: auto; 
-        
+        height: auto;
+
         position: relative;
         z-index: 0;
         cursor: grab;
         border: 2px solid transparent;
         transition: border-color 0.1s;
-        
+
         /* Чтобы скругления углов работали */
-        overflow: hidden; 
-        
+        overflow: hidden;
+
         /* Убираем лишние отступы у блочных элементов */
         display: flex;
         flex-direction: column;
@@ -108,7 +108,7 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        
+
         /* Имя всегда снизу */
         width: 100%;
     }

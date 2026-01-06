@@ -5,6 +5,7 @@
     import ImageGrid from "../components/ImageGrid.svelte";
     import Footer from "../components/Footer.svelte";
     
+    import { Snackbar, snackbar, Button } from "m3-svelte";
 
     import {
         images,
@@ -25,21 +26,27 @@
     function copyLink() {
         navigator.clipboard.writeText($finalUrl);
         statusMsg.set("Ссылка скопирована!");
+        snackbar("Ссылка скопирована!", undefined, true);
     }
+
+    let isSnackbarActive = false;
+    let snackbarMessage = "";
+
+    $: if ($statusMsg) {
+        snackbarMessage = $statusMsg;
+        isSnackbarActive = true;
+    }
+
+
 </script>
 
 <main>
     <Header
         bind:chapterTitle={$chapterTitle}
         isProcessing={$isProcessing}
-        hasImages={$images.length > 0}
         on:selectFolder={selectFolderAction}
         on:selectFiles={selectFilesAction}
     />
-
-    <SuccessBox finalUrl={$finalUrl} {copyLink} />
-
-    <StatusBar statusMsg={$statusMsg} />
 
     <ImageGrid isProcessing={$isProcessing} />
     <Footer
@@ -48,7 +55,9 @@
         pageCount={$images.length}
         on:create={createArticleAction}
         on:clear={confirmClear}
+        {copyLink}
     />
+    <Snackbar/>
 </main>
 
 <style>

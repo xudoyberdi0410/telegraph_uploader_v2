@@ -1,11 +1,12 @@
 package server
 
 import (
-    "io"
-    "net/http"
-    "net/url"
-    "os"
-    "strings"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
 )
 
 // FileLoader обрабатывает запросы на получение локальных изображений
@@ -18,9 +19,11 @@ func NewFileLoader() *FileLoader {
 
 func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
     // 0. Проверка безопасности: обрабатываем только пути, начинающиеся с /thumbnail/
-    prefix := "/thumbnail/"
+    log.Printf("Received thumbnail request: %s", req.URL.Path)
+	prefix := "/thumbnail/"
     if !strings.HasPrefix(req.URL.Path, prefix) {
         http.NotFound(res, req)
+		log.Printf("Invalid thumbnail request path: %s", req.URL.Path)
         return
     }
 
@@ -31,6 +34,7 @@ func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
     decodedPath, err := url.QueryUnescape(rawPath)
     if err != nil {
         http.Error(res, "Bad URL path", http.StatusBadRequest)
+		log.Printf("Error decoding thumbnail path %s: %v", rawPath, err)
         return
     }
 
@@ -38,16 +42,20 @@ func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
     file, err := os.Open(decodedPath)
     if err != nil {
         http.NotFound(res, req)
+		log.Printf("File not found: %s", decodedPath)
         return
     }
     defer file.Close()
+	log.Printf("Opened file for thumbnail: %s", decodedPath)
 
     // 3. Отдаем файл как есть
     res.Header().Set("Content-Type", "image/jpeg")
     res.Header().Set("Cache-Control", "public, max-age=3600")
-    
+    log.Printf("Sending thumbnail file: %s", decodedPath)
     // Копируем содержимое файла напрямую в response
     if _, err := io.Copy(res, file); err != nil {
+		log.Printf("Error sending file %s: %v", decodedPath, err)
         http.Error(res, "Failed to send file", http.StatusInternalServerError)
     }
+	log.Printf("Served thumbnail: %s", decodedPath)
 }

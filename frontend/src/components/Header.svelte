@@ -11,7 +11,6 @@
     // Входные параметры
     export let chapterTitle = "";
     export let isProcessing = false;
-    export let hasImages = false;
 </script>
 
 <header class="header-container">
@@ -42,16 +41,6 @@
         <Icon icon={iconImage} />
         Файлы
     </Button>
-    <!-- <div class="actions-area">
-        <Button
-            variant="tonal"
-            onclick={() => dispatch("clear")}
-            disabled={isProcessing || !hasImages}
-        >
-            <Icon icon={iconDelete} />
-            Очистить
-        </Button>
-    </div> -->
 </header>
 
 <style>
