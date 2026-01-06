@@ -1,72 +1,69 @@
-<script>    
-    import Header from "./components/Header.svelte";
-    import SuccessBox from "./components/SuccessBox.svelte";
-    import StatusBar from "./components/StatusBar.svelte";
-    import ImageGrid from "./components/ImageGrid.svelte";
+<script>
+    import { NavCMLX, NavCMLXItem } from "m3-svelte";
 
-    import {
-        images,
-        chapterTitle,
-        isProcessing,
-        statusMsg,
-        finalUrl,
-        clearAll,
-        createArticleAction,
-        selectFilesAction,
-        selectFolderAction,
-    } from "./stores/appStore.js";
+    import iconHome from "@ktibow/iconset-material-symbols/home-outline";
+    import iconSettings from "@ktibow/iconset-material-symbols/settings-outline";
+    import iconHistory from "@ktibow/iconset-material-symbols/history";
 
-    function confirmClear() {
-        if (confirm("Очистить список?")) clearAll();
-    }
-    
-    function copyLink() {
-        navigator.clipboard.writeText($finalUrl);
-        statusMsg.set("Ссылка скопирована!");
-    }
+    import Home from "./views/Home.svelte";
+    import Settings from "./views/Settings.svelte";
+    import History from "./views/History.svelte";
+
+    let currentPage = "home";
 </script>
 
-<main>
-    <Header
-        bind:chapterTitle={$chapterTitle}
-        isProcessing={$isProcessing}
-        hasImages={$images.length > 0}
-        on:selectFolder={selectFolderAction}
-        on:selectFiles={selectFilesAction}
-        on:create={createArticleAction}
-        on:clear={confirmClear}
-    />
+<div class="app-layout">
+    <NavCMLX variant="large">
+        <NavCMLXItem
+            variant="auto"
+            icon={iconHome}
+            text="Главная"
+            selected={currentPage === "home"}
+            onclick={() => (currentPage = "home")}
+        />
 
-    <SuccessBox finalUrl={$finalUrl} {copyLink} />
+        <NavCMLXItem
+            variant="auto"
+            icon={iconSettings}
+            text="Настройки"
+            selected={currentPage === "settings"}
+            onclick={() => (currentPage = "settings")}
+        />
 
-    <StatusBar statusMsg={$statusMsg} />
+        <NavCMLXItem
+            variant="auto"
+            icon={iconHistory}
+            text="История"
+            selected={currentPage === "history"}
+            onclick={() => (currentPage = "history")}
+        />
+    </NavCMLX>
 
-    <ImageGrid isProcessing={$isProcessing} />
-</main>
+    <main class="content">
+        {#if currentPage === "home"}
+            <Home />
+        {:else if currentPage === "settings"}
+            <Settings />
+        {:else if currentPage === "history"}
+            <History />
+        {/if}
+    </main>
+</div>
 
 <style>
-    :root {
-        --bg-color: #1a1a1a;
-        --header-bg: #252525;
-        --card-bg: #2a2a2a;
-        --text-main: #e0e0e0;
-        --accent: #4a90e2;
-        --border: #333;
-        --header-height: 70px;
-    }
-
-    :global(body) {
-        margin: 0;
-        background: var(--bg-color);
-        color: var(--text-main);
-        font-family: sans-serif;
-        overflow: hidden;
-        user-select: none;
-    }
-
-    main {
+    .app-layout {
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         height: 100vh;
+        width: 100%;
+        overflow: hidden;
+        background-color: var(--m3c-surface);
+    }
+
+    .content {
+        flex-grow: 1;
+        overflow-y: auto;
+        padding: 16px;
+        padding-bottom: 0;
     }
 </style>

@@ -1,153 +1,69 @@
 <script>
     import { createEventDispatcher } from "svelte";
-    import Settings from "./Settings.svelte";
-    import History from "./History.svelte";
-    import { showSettingsModal } from "../stores/appStore";
+    import { TextField, Button, Icon, ConnectedButtons } from "m3-svelte";
+
+    // Иконки
+    import iconFolder from "@ktibow/iconset-material-symbols/folder-open-outline";
+    import iconImage from "@ktibow/iconset-material-symbols/image-outline";
+
     const dispatch = createEventDispatcher();
 
-    // Входные параметры (props)
+    // Входные параметры
     export let chapterTitle = "";
     export let isProcessing = false;
     export let hasImages = false;
-    let showHistory = false;
 </script>
 
-<header>
-    {#if showHistory}
-        <History on:close={() => (showHistory = false)} />
-    {/if}
-    <div class="input-group">
-        <input
-            type="text"
-            class="title-input"
+<header class="header-container">
+    <div class="input-wrapper">
+        <TextField
             bind:value={chapterTitle}
-            placeholder="Название главы (например: Глава 1)"
+            label="Название главы"
             disabled={isProcessing}
+            type="text"
         />
-        <div class="settings-wrapper">
-            <button
-                class="btn"
-                on:click={() => showSettingsModal.set(!$showSettingsModal)}
-                class:active={$showSettingsModal}
-            >
-                Настройки
-            </button>
-
-            <!-- Условный рендеринг: показываем только если true -->
-            {#if $showSettingsModal}
-                <Settings on:close={() => showSettingsModal.set(false)} />
-            {/if}
-        </div>
     </div>
 
-    <div class="button-group">
-        <button
-            class="btn btn-secondary"
-            on:click={() => dispatch("selectFolder")}
-            disabled={isProcessing}
-        >
-            📁 Выбрать папку
-        </button>
-        <button
-            class="btn secondary"
-            on:click={() => dispatch("selectFiles")}
-            disabled={isProcessing}
-        >
-            🖼️ Выбрать файлы
-        </button>
-        <button
-            class="btn danger"
-            on:click={() => dispatch("clear")}
-            disabled={isProcessing || !hasImages}
-        >
-            🗑️ Очистить
-        </button>
-        <button class="btn secondary" on:click={() => (showHistory = true)}>
-            🕒 История
-        </button>
+    <Button
+        variant="filled"
+        onclick={() => dispatch("selectFolder")}
+        disabled={isProcessing}
+        iconType="left"
+    >
+        <Icon icon={iconFolder} />
+        Папка
+    </Button>
 
-        <button
-            class="btn primary"
-            on:click={() => dispatch("create")}
+    <Button
+        variant="filled"
+        onclick={() => dispatch("selectFiles")}
+        disabled={isProcessing}
+    >
+        <Icon icon={iconImage} />
+        Файлы
+    </Button>
+    <!-- <div class="actions-area">
+        <Button
+            variant="tonal"
+            onclick={() => dispatch("clear")}
             disabled={isProcessing || !hasImages}
         >
-            🚀 Создать страницу
-        </button>
-    </div>
-    
+            <Icon icon={iconDelete} />
+            Очистить
+        </Button>
+    </div> -->
 </header>
 
 <style>
-    header {
-        background: var(--header-bg);
-        padding: 1rem 1.5rem;
+    .header-container {
         display: flex;
-        align-items: start;
-        border-bottom: 1px solid var(--border);
-        flex-shrink: 0;
-        gap: 20px;
-        flex-direction: column;
-        z-index: 10;
-    }
-    .input-group {
-        width: 100%;
-        display: flex;
-        gap: 10px;
-        justify-content: space-between;
         align-items: center;
-    }
-
-    .settings-wrapper {
-        position: relative; /* Важно: попап будет позиционироваться относительно этого блока */
-    }
-
-    .title-input {
-        background: #111;
-        border: 1px solid #444;
-        color: white;
-        padding: 8px 12px;
-        border-radius: 4px;
-        font-size: 1rem;
         width: 100%;
-        flex-grow: 1;
-    }
-    .title-input:focus {
-        outline: none;
-        border-color: var(--accent);
-    }
-
-    .button-group {
-        display: flex;
         gap: 10px;
-        flex-wrap: wrap;
     }
-    .btn {
-        padding: 0.6rem 1.2rem;
-        border-radius: 6px;
-        border: none;
-        cursor: pointer;
-        font-weight: bold;
-        font-size: 0.9rem;
-        transition: 0.2s;
-    }
-    .btn.primary {
-        background: var(--accent);
-        color: white;
-    }
-    .btn.primary:hover {
-        background: #357abd;
-    }
-    .btn.primary:disabled {
-        background: #555;
-        cursor: not-allowed;
-    }
-
-    .btn.secondary {
-        background: #333;
-        color: #ddd;
-        border: 1px solid #444;
-    }
-    .btn.secondary:hover {
-        background: #444;
+    .input-wrapper {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
     }
 </style>

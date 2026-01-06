@@ -1,8 +1,11 @@
+@import "m3-svelte/etc/styles.css";
+@import "m3-svelte/etc/recommended-styles.css";
 * {
     box-sizing: border-box;
     padding: 0;
     margin: 0;
 }
+
 html {
     background-color: rgba(27, 38, 54, 1);
     text-align: center;
@@ -13,12 +16,66 @@ body {
     margin: 0;
     color: white;
     font-family: "Roboto",
-    "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
+        "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+        sans-serif;
 }
 
 
 #app {
     height: 100vh;
     text-align: center;
+}
+
+
+@function --m3-density(--size) {
+    result: var(--size);
+}
+
+:root {
+    color-scheme: light dark;
+}
+
+@layer tokens {
+    :root {
+        --m3c-surface: light-dark(#fdf8f9, #0f0e0f);
+        --m3c-surface-container-lowest: light-dark(#fff, #000);
+        --m3c-surface-container-low: light-dark(#f7f2f4, #141314);
+        --m3c-surface-container: light-dark(#f1edef, #1a191b);
+        --m3c-surface-container-high: light-dark(#ece7ea, #201f21);
+        --m3c-surface-container-highest: light-dark(#e6e1e4, #272528);
+        --m3c-on-surface: light-dark(#333235, #e9e4e7);
+        --m3c-on-surface-variant: light-dark(#615e61, #aeaaad);
+        --m3c-outline: light-dark(#7d7a7d, #777478);
+        --m3c-outline-variant: light-dark(#b5b1b4, #49474a);
+        --m3c-inverse-surface: light-dark(#0f0e0f, #fdf8f9);
+        --m3c-inverse-on-surface: light-dark(#9f9c9d, #565455);
+        --m3c-primary: light-dark(#615d66, #cac4cf);
+        --m3c-on-primary: light-dark(#fcf5ff, #423f48);
+        --m3c-primary-container: light-dark(#e7e0eb, #49454e);
+        --m3c-on-primary-container: light-dark(#545059, #d4ced9);
+        --m3c-inverse-primary: light-dark(#f8f1fd, #615d67);
+        --m3c-secondary: light-dark(#615e62, #a09da1);
+        --m3c-on-secondary: light-dark(#fdf7fc, #211f23);
+        --m3c-secondary-container: light-dark(#e6e1e6, #3d3b3e);
+        --m3c-on-secondary-container: light-dark(#535155, #c2bec2);
+        --m3c-tertiary: light-dark(#5d5d78, #ebe9ff);
+        --m3c-on-tertiary: light-dark(#fbf7ff, #54546f);
+        --m3c-tertiary-container: #dbdafb;
+        --m3c-on-tertiary-container: #4c4c67;
+        --m3c-error: light-dark(#9e3f4e, #ec7c8a);
+        --m3c-on-error: light-dark(#fff7f7, #490013);
+        --m3c-error-container: light-dark(#ff8b9a, #7f2737);
+        --m3c-on-error-container: light-dark(#782232, #ff97a3);
+        --m3c-shadow: #000;
+        --m3c-scrim: #000;
+        --m3c-on-on-primary: light-dark(#605c66, #cac4cf);
+        --m3c-primary-container-subtle: light-dark(#ded8e3, #2e2b33);
+        --m3c-on-primary-container-subtle: light-dark(#4f4b54, #afa9b4);
+        --m3c-secondary-container-subtle: light-dark(#ddd8dd, #2d2b2f);
+        --m3c-on-secondary-container-subtle: light-dark(#4e4c50, #aeaaae);
+        --m3c-tertiary-container-subtle: light-dark(#d8d7f8, #292a43);
+        --m3c-on-tertiary-container-subtle: light-dark(#4a4a65, #a9a8c7);
+        --m3c-error-container-subtle: light-dark(#ffced2, #5b0a1e);
+        --m3c-on-error-container-subtle: light-dark(#872d3d, #fc8997);
+    }
 }

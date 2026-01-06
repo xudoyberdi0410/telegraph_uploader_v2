@@ -55,7 +55,7 @@ func New(cfg *config.Config) (*R2Uploader, error) {
 
 // UploadChapter теперь метод структуры, а не просто функция
 func (u *R2Uploader) UploadChapter(filePaths []string, resizeSettings ResizeSettings) UploadResult {
-	maxWorkers := runtime.NumCPU() * 2
+	maxWorkers := runtime.NumCPU()
 	sem := make(chan struct{}, maxWorkers)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -71,7 +71,6 @@ func (u *R2Uploader) UploadChapter(filePaths []string, resizeSettings ResizeSett
 			defer func() { <-sem }()
 
 			// ШАГ 1: Делегируем обработку изображения другой функции
-			// Код стал чище: мы просто говорим "подготовь картинку"
 			processed, err := processImage(srcPath, resizeSettings)
 			if err != nil {
 				mu.Lock()
