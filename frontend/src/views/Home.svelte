@@ -65,5 +65,6 @@
         flex-direction: column;
         height: 100vh;
         position: relative;
+        padding-top: 16px;
     }
 </style>

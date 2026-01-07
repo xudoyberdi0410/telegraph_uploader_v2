@@ -16,6 +16,8 @@
     "vite-plugin-functions-mixins": "^0.4.1"
   },
   "dependencies": {
-    "@sveltejs/adapter-static": "^3.0.10"
+    "@fortawesome/free-brands-svg-icons": "^7.1.0",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "svelte-fa": "^4.0.4"
   }
 }

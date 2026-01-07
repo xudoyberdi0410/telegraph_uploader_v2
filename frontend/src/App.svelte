@@ -4,10 +4,12 @@
     import iconHome from "@ktibow/iconset-material-symbols/home-outline";
     import iconSettings from "@ktibow/iconset-material-symbols/settings-outline";
     import iconHistory from "@ktibow/iconset-material-symbols/history";
+    import iconUpload from "@ktibow/iconset-material-symbols/upload-2"
 
     import Home from "./views/Home.svelte";
     import Settings from "./views/Settings.svelte";
     import History from "./views/History.svelte";
+    import Telegram from "./views/Telegram.svelte";
 
     let currentPage = "home";
 </script>
@@ -37,6 +39,15 @@
             selected={currentPage === "history"}
             onclick={() => (currentPage = "history")}
         />
+
+        <!-- <NavCMLXItem
+            variant="auto"
+            icon={iconUpload}
+            text="Telegram"
+            disabled
+            selected={currentPage === "telegram"}
+            onclick={() => (currentPage = "telegram")}
+        /> -->
     </NavCMLX>
 
     <main class="content">
@@ -46,6 +57,8 @@
             <Settings />
         {:else if currentPage === "history"}
             <History />
+        {:else if currentPage === "telegram"}
+            <Telegram />
         {/if}
     </main>
 </div>
@@ -63,7 +76,6 @@
     .content {
         flex-grow: 1;
         overflow-y: auto;
-        padding: 16px;
-        padding-bottom: 0;
+        padding: 0 16px;
     }
 </style>
