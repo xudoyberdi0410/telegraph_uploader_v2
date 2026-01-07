@@ -1,42 +1,71 @@
 <script>
     import { onMount } from "svelte";
-
     import { Button, Card, Icon, snackbar, Snackbar } from "m3-svelte";
+
     import iconOpen from "@ktibow/iconset-material-symbols/open-in-new";
     import iconView from "@ktibow/iconset-material-symbols/visibility-outline";
     import iconCopy from "@ktibow/iconset-material-symbols/content-copy-outline";
     import editIcon from "@ktibow/iconset-material-symbols/edit-outline";
     import iconShare from "@ktibow/iconset-material-symbols/share-outline";
-    import { GetHistory, ClearHistory } from "../../wailsjs/go/main/App";
+
+    import { GetHistory } from "../../wailsjs/go/main/App";
     import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
+
+    let historyItems = $state([]);
+
+    onMount(async () => {
+        try {
+            historyItems = await GetHistory(50, 0);
+        } catch (e) {
+            console.error("Ошибка загрузки истории:", e);
+            snackbar("Не удалось загрузить историю");
+        }
+    });
 
     function copyLink(url) {
         navigator.clipboard.writeText(url);
         snackbar("Ссылка скопирована!", undefined, true);
     }
 
-    let historyItems = [];
-    onMount(async () => {
-        historyItems = await GetHistory(50, 0);
-    });
+    async function getArticleViews(history_item) {
+        if (!history_item.url) return 0;
 
-    async function getArticleviews(history_item) {
-        const slug = history_item.url.split("/").pop();
+        const parts = history_item.url.split("/").filter((p) => p);
+        const slug = parts[parts.length - 1];
 
-        let url = `https://api.telegra.ph/getViews/${slug}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        if (data.error) {
-            console.error("Error fetching views:", data.error);
+        try {
+            const url = `https://api.telegra.ph/getViews/${slug}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            if (data.ok === false || data.error) {
+                return 0;
+            }
+
+            return data.result?.views || 0;
+        } catch (e) {
             return 0;
         }
-        return data.result.views;
+    }
+
+    function formatDate(dateStr) {
+        if (!dateStr) return "";
+        try {
+            const date = new Date(dateStr);
+            return new Intl.DateTimeFormat("ru-RU", {
+                day: "numeric",
+                month: "long",
+                hour: "2-digit",
+                minute: "2-digit",
+            }).format(date);
+        } catch {
+            return dateStr;
+        }
     }
 </script>
 
 <Snackbar />
 <div class="cards">
-    {#each historyItems as item}
+    {#each historyItems as item (item.id)}
         <Card variant="filled">
             <div class="card-wrapper">
                 <Button variant="text" onclick={() => BrowserOpenURL(item.url)}>
@@ -45,12 +74,16 @@
                     </div>
                     <Icon icon={iconOpen} />
                 </Button>
-                <div class="data">{item.date}</div>
+                <div class="data">{formatDate(item.date)}</div>
                 <div class="views">
                     <Icon icon={iconView} />
-                    <span>
-                        {#await getArticleviews(item) then views}{views}{/await
-                        }</span>
+                    {#await getArticleViews(item)}
+                        <span>...</span>
+                    {:then views}
+                        <span>{views}</span>
+                    {:catch}
+                        <span>0</span>
+                    {/await}
                 </div>
                 <div class="actions">
                     <Button onclick={() => BrowserOpenURL(item.url)}>
@@ -73,6 +106,9 @@
             </div>
         </Card>
     {/each}
+    {#if historyItems.length === 0}
+        <div class="empty-state">История пуста</div>
+    {/if}
 </div>
 
 <style>
@@ -108,5 +144,10 @@
         display: flex;
         width: 100%;
         gap: 10px;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: var(--m3c-on-surface-variant);
     }
 </style>

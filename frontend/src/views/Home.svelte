@@ -1,62 +1,50 @@
 <script>
+    import { Snackbar, snackbar } from "m3-svelte";
+
+    import { appState } from "../stores/appStore.svelte";
+
     import Header from "../components/Header.svelte";
     import ImageGrid from "../components/ImageGrid.svelte";
     import Footer from "../components/Footer.svelte";
-    
-    import { Snackbar, snackbar, Button } from "m3-svelte";
-
-    import {
-        images,
-        chapterTitle,
-        isProcessing,
-        statusMsg,
-        finalUrl,
-        clearAll,
-        createArticleAction,
-        selectFilesAction,
-        selectFolderAction,
-    } from "../stores/appStore.js";
 
     function confirmClear() {
-        if (confirm("Очистить список?")) clearAll();
+        if (confirm("Очистить список?")) appState.clearAll();
     }
 
     function copyLink() {
-        navigator.clipboard.writeText($finalUrl);
-        statusMsg.set("Ссылка скопирована!");
-        snackbar("Ссылка скопирована!", undefined, true);
-    }
-
-    let isSnackbarActive = false;
-    let snackbarMessage = "";
-
-    $: if ($statusMsg) {
-        snackbarMessage = $statusMsg;
-        isSnackbarActive = true;
+        if (appState.finalUrl) {
+            navigator.clipboard.writeText(appState.finalUrl);
+            appState.statusMsg = "Ссылка скопирована!";
+            snackbar("Ссылка скопирована!", undefined, true);
+        }
     }
 
 
+    $effect(() => {
+        if (appState.statusMsg) {
+            snackbar(appState.statusMsg)
+        }
+    });
 </script>
 
 <main>
     <Header
-        bind:chapterTitle={$chapterTitle}
-        isProcessing={$isProcessing}
-        on:selectFolder={selectFolderAction}
-        on:selectFiles={selectFilesAction}
+        bind:chapterTitle={appState.chapterTitle}
+        isProcessing={appState.isProcessing}
+        onSelectFolder={()=>appState.selectFolderAction()}
+        onSelectFiles={()=>appState.selectFilesAction()}
     />
 
-    <ImageGrid isProcessing={$isProcessing} />
+    <ImageGrid isProcessing={appState.isProcessing} />
     <Footer
-        isProcessing={$isProcessing}
-        hasImages={$images.length > 0}
-        pageCount={$images.length}
-
-        {createArticleAction}
+        isProcessing={appState.isProcessing}
+        hasImages={appState.images.length > 0}
+        pageCount={appState.images.length}
+        createArticleAction={appState.createArticleAction}
         clearAll={confirmClear}
-        {copyLink}
+        copyLink={copyLink}
     />
-    <Snackbar/>
+    <Snackbar />
 </main>
 
 <style>

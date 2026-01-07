@@ -1,17 +1,11 @@
 <script>
-    import { createEventDispatcher } from "svelte";
-    
-    // Используем $props() для получения параметров в Svelte 5
-    let { img, isProcessing } = $props();
+    let { img, isProcessing, onRemove, onDragStart, onDragOver, onDragEnd } =
+        $props();
 
-    const dispatch = createEventDispatcher();
-
-    // Функция для удаления с остановкой всплытия события (вместо |stopPropagation)
-    function handleRemove(e) {
+    function handleRemoveClick(e) {
         e.stopPropagation();
-        dispatch("removeImage");
+        onRemove?.()
     }
-    
 </script>
 
 <div
@@ -19,14 +13,14 @@
     class:selected={img.selected}
     draggable={!isProcessing}
     role="listitem"
-    ondragstart={(e) => dispatch('dragstart', e)}
-    ondragover={(e) => dispatch('dragover', e)}
-    ondragend={(e) => dispatch('dragend', e)}
+    ondragstart={onDragStart}
+    ondragover={onDragOver}
+    ondragend={onDragEnd}
 >
     <div class="card-inner">
         <button
             class="close-btn"
-            onclick={handleRemove}
+            onclick={handleRemoveClick}
             title="Убрать из списка">×</button
         >
 
@@ -35,10 +29,7 @@
         </div>
 
         <div class="img-wrapper">
-            <img
-                src={img.thumbnailSrc}
-                alt={img.name}
-            />
+            <img src={img.thumbnailSrc} alt={img.name} />
         </div>
 
         <div class="name">{img.name}</div>
@@ -46,7 +37,6 @@
 </div>
 
 <style>
-    /* Ваши стили остаются без изменений */
     .card {
         background: var(--card-bg);
         border-radius: 6px;

@@ -9,7 +9,7 @@
     import Settings from "./views/Settings.svelte";
     import History from "./views/History.svelte";
 
-    let currentPage = "home";
+    let currentPage = $state("home");
 </script>
 
 <div class="app-layout">

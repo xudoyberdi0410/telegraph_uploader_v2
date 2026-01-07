@@ -1,11 +1,12 @@
 <script>
     import ImageCard from "./ImageCard.svelte";
 
-    import { images, removeImageByIndex } from "../stores/appStore.js";
+    import { appState } from "../stores/appStore.svelte.js";
 
-    export let isProcessing;
+    let { isProcessing } = $props();
 
-    let draggedIndex = null;
+    let draggedIndex = $state(null);
+
     function handleDragStart(e, index) {
         draggedIndex = index;
         e.dataTransfer.effectAllowed = "move";
@@ -19,14 +20,9 @@
         const sourceIdx = draggedIndex;
         const targetIdx = index;
 
-        // Логика перестановки прямо в сторе
-        images.update((currentImages) => {
-            const newImages = [...currentImages];
-            const item = newImages[sourceIdx];
-            newImages.splice(sourceIdx, 1);
-            newImages.splice(targetIdx, 0, item);
-            return newImages;
-        });
+        const item = appState.images[sourceIdx];
+        appState.images.splice(sourceIdx, 1);
+        appState.images.splice(targetIdx, 0, item);
 
         draggedIndex = targetIdx;
     }
@@ -36,21 +32,21 @@
         e.target.style.opacity = "1";
     }
 </script>
+
 <div class="scrollable">
     <div class="grid" class:dimmed={isProcessing}>
-        {#each $images as img, index (img.id)}
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
+        {#each appState.images as img, index (img.id)}
             <ImageCard
                 {img}
                 {isProcessing}
-                on:removeImage={() => removeImageByIndex(index)}
-                on:dragstart={(e) => handleDragStart(e, index)}
-                on:dragover={(e) => handleDragOver(e, index)}
-                on:dragend={handleDragEnd}
+                onRemove={() => appState.removeImageByIndex(index)}
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDragEnd={handleDragEnd}
             />
         {/each}
-    
-        {#if $images.length === 0}
+
+        {#if appState.images.length === 0}
             <div class="empty-state">
                 <p>Выберите файлы или папку</p>
             </div>
@@ -68,20 +64,24 @@
         display: grid;
         /* Колонки ровно 150px, сколько влезет в ряд */
         grid-template-columns: repeat(auto-fill, 150px);
-        
+
         /* ВАЖНО: Высота ряда подстраивается под содержимое */
         grid-auto-rows: auto;
-        
+
         gap: 15px;
         padding: 1.5rem;
-        
+
         /* ВАЖНО: Прижимаем карточки к верху, чтобы они не растягивались на всю высоту ряда */
         align-items: start;
-        
+
         /* Центрируем всю сетку, если сбоку остается место */
         justify-content: center;
-        
+
         flex: 1;
+    }
+    .grid.dimmed {
+        opacity: 0.5;
+        pointer-events: none;
     }
 
     .empty-state {

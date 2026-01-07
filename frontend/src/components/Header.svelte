@@ -1,16 +1,16 @@
 <script>
-    import { createEventDispatcher } from "svelte";
-    import { TextField, Button, Icon, ConnectedButtons } from "m3-svelte";
+    import { TextField, Button, Icon } from "m3-svelte";
 
     // Иконки
     import iconFolder from "@ktibow/iconset-material-symbols/folder-open-outline";
     import iconImage from "@ktibow/iconset-material-symbols/image-outline";
 
-    const dispatch = createEventDispatcher();
-
-    // Входные параметры
-    export let chapterTitle = "";
-    export let isProcessing = false;
+    let {
+        chapterTitle = $bindable(""),
+        isProcessing = false,
+        onSelectFolder,
+        onSelectFiles
+    } = $props()
 </script>
 
 <header class="header-container">
@@ -25,7 +25,7 @@
 
     <Button
         variant="filled"
-        onclick={() => dispatch("selectFolder")}
+        onclick={() => onSelectFolder?.()}
         disabled={isProcessing}
         iconType="left"
     >
@@ -35,7 +35,7 @@
 
     <Button
         variant="filled"
-        onclick={() => dispatch("selectFiles")}
+        onclick={() => onSelectFiles?.()}
         disabled={isProcessing}
     >
         <Icon icon={iconImage} />
