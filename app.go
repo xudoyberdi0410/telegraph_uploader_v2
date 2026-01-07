@@ -7,11 +7,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"telegraph_uploader_v2/internal/config"
 	"telegraph_uploader_v2/internal/database"
-	"telegraph_uploader_v2/internal/telegram"
 	"telegraph_uploader_v2/internal/telegraph"
 	"telegraph_uploader_v2/internal/uploader"
 
@@ -240,43 +238,3 @@ func (a *App) ClearHistory() {
 	a.db.ClearHistory()
 	log.Println("[App] History cleared")
 }
-
-// В App добавим:
-func (a *App) SendToTelegram(botToken, channelID, text string, scheduleUnix int64) string {
-	var scheduleTime time.Time
-	if scheduleUnix > 0 {
-		scheduleTime = time.Unix(scheduleUnix, 0)
-	}
-
-	err := telegram.SendScheduledMessage(botToken, channelID, text, scheduleTime)
-	if err != nil {
-		return "Ошибка: " + err.Error()
-	}
-	return "Успешно отправлено!"
-}
-
-// Добавьте также методы Get/Save для ботов, каналов и шаблонов, вызывающие БД
-
-func (a *App) GetTgBots() []database.TgBot {
-	return a.db.GetTgBots()
-}
-
-func (a *App) SaveTgBot(bot database.TgBot) {
-	a.db.SaveTgBot(bot)
-}
-
-func (a *App) GetTgChannels() []database.TgChannel {
-	return a.db.GetTgChannels()
-}
-
-func (a *App) SaveTgChannel(channel database.TgChannel) {
-	a.db.SaveTgChannel(channel)
-}
-func (a *App) GetTgTemplates() []database.TgTemplate {
-	return a.db.GetTgTemplates()
-}
-
-func (a *App) SaveTgTemplate(template database.TgTemplate) {
-	a.db.SaveTgTemplate(template)
-}
-
