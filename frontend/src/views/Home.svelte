@@ -51,8 +51,9 @@
         isProcessing={$isProcessing}
         hasImages={$images.length > 0}
         pageCount={$images.length}
-        on:create={createArticleAction}
-        on:clear={confirmClear}
+
+        {createArticleAction}
+        clearAll={confirmClear}
         {copyLink}
     />
     <Snackbar/>

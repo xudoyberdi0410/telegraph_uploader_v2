@@ -5,12 +5,16 @@
     import iconCopy from "@ktibow/iconset-material-symbols/content-copy-outline";
     import { Button, Card, FAB, Icon, Snackbar, WavyLinearProgress } from "m3-svelte";
     import { createEventDispatcher } from "svelte";
+    import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
+
     import { finalUrl } from "../stores/appStore";
     const dispatch = createEventDispatcher();
     export let isProcessing = false;
     export let hasImages = false;
     export let pageCount = 0;
     export let copyLink = () => {};
+    export let clearAll = () => {}
+    export let createArticleAction = () => {}
     // finalUrl.set(
     //     "https://telegra.ph/Deti-semi-Siundzi---Glavy-63-Ongoing-JP-01-03-3",
     // );
@@ -27,8 +31,7 @@
         <Button
             size="m"
             square
-            onclick={() => dispatch("create")}
-            disabled={isProcessing || !hasImages}
+            disabled
         >
             <Icon icon={iconCancel} />
         </Button>
@@ -37,7 +40,7 @@
             <div class="link-info">
                 <Button
                     square
-                    onclick={() => dispatch("clear")}
+                    onclick={clearAll}
                     disabled={isProcessing || !hasImages}
                     size="m"
                 >
@@ -51,7 +54,7 @@
             </div>
 
             <div class="actions">
-                <Button variant="tonal" size="m" square>
+                <Button variant="tonal" size="m" square onclick={()=>{BrowserOpenURL($finalUrl)}}>
                     <Icon icon={iconOpen} />
                 </Button>
                 <Button
@@ -68,7 +71,7 @@
         <Button
             size="m"
             square
-            onclick={() => dispatch("clear")}
+            onclick={clearAll}
             disabled={isProcessing || !hasImages}
         >
             <Icon icon={iconDelete} />
@@ -81,7 +84,7 @@
         <Button
             size="m"
             square
-            onclick={() => dispatch("create")}
+            onclick={createArticleAction}
             disabled={isProcessing || !hasImages}
         >
             Telegraph</Button

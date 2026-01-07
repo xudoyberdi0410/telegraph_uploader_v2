@@ -13,8 +13,8 @@
   "info": {
     "productName": "Manga Uploader",
     "companyName": "Не знайки",
-    "productVersion": "1.0.5",
-    "fileVersion": "1.0.5",
+    "productVersion": "1.1.0",
+    "fileVersion": "1.1.0",
     "comments": "Uploads manga to R2 and creates Telegraph articles",
     "copyright": "Copyright © 2026"
   }
