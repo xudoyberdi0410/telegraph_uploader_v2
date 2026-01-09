@@ -9,7 +9,9 @@
     import Settings from "./views/Settings.svelte";
     import History from "./views/History.svelte";
 
-    let currentPage = $state("home");
+    import { appState } from "./stores/appStore.svelte"; // Import appState
+    
+    // let currentPage = $state("home"); // Removed local state
 </script>
 
 <div class="app-layout">
@@ -18,33 +20,33 @@
             variant="auto"
             icon={iconHome}
             text="Главная"
-            selected={currentPage === "home"}
-            onclick={() => (currentPage = "home")}
+            selected={appState.currentPage === "home"}
+            onclick={() => (appState.currentPage = "home")}
         />
 
         <NavCMLXItem
             variant="auto"
             icon={iconSettings}
             text="Настройки"
-            selected={currentPage === "settings"}
-            onclick={() => (currentPage = "settings")}
+            selected={appState.currentPage === "settings"}
+            onclick={() => (appState.currentPage = "settings")}
         />
 
         <NavCMLXItem
             variant="auto"
             icon={iconHistory}
             text="История"
-            selected={currentPage === "history"}
-            onclick={() => (currentPage = "history")}
+            selected={appState.currentPage === "history"}
+            onclick={() => (appState.currentPage = "history")}
         />
     </NavCMLX>
 
     <main class="content">
-        {#if currentPage === "home"}
+        {#if appState.currentPage === "home"}
             <Home />
-        {:else if currentPage === "settings"}
+        {:else if appState.currentPage === "settings"}
             <Settings />
-        {:else if currentPage === "history"}
+        {:else if appState.currentPage === "history"}
             <History />
         {/if}
     </main>

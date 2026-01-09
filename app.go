@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
+	"fmt"
+	
 	"telegraph_uploader_v2/internal/config"
 	"telegraph_uploader_v2/internal/database"
 	"telegraph_uploader_v2/internal/telegraph"
@@ -115,6 +116,46 @@ func (a *App) CreateTelegraphPage(title string, imageUrls []string) string {
 	}
 
 	return url
+}
+
+func (a *App) EditTelegraphPage(path string, title string, imageUrls []string, token string) string {
+	log.Printf("[App] EditTelegraphPage called. Path: '%s', Title: '%s', Images: %d", path, title, len(imageUrls))
+
+	url := a.tgClient.EditPage(path, title, imageUrls, token)
+
+	if len(url) > 4 && url[:4] == "http" {
+		log.Printf("[App] Page edited successfully: %s", url)
+	} else {
+		log.Printf("[App] Failed to edit page. Result URL/Error: %s", url)
+	}
+
+	return url
+}
+
+func (a *App) GetTelegraphPage(pageUrl string) (ChapterResponse, error) {
+	log.Printf("[App] GetTelegraphPage called. URL: %s", pageUrl)
+	
+	// Извлекаем slug из URL
+	parts := strings.Split(pageUrl, "/")
+	if len(parts) == 0 {
+		return ChapterResponse{}, fmt.Errorf("invalid url")
+	}
+	path := parts[len(parts)-1]
+
+	title, images, err := a.tgClient.GetPage(path)
+	if err != nil {
+		log.Printf("[App] Error getting page: %v", err)
+		return ChapterResponse{}, err
+	}
+
+	log.Printf("[App] Got page '%s' with %d images", title, len(images))
+
+	return ChapterResponse{
+		Path:       pageUrl,
+		Title:      title,
+		Images:     images,
+		ImageCount: len(images),
+	}, nil
 }
 
 // Диалог выбора папки

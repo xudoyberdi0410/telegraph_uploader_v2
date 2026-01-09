@@ -10,6 +10,7 @@
 
     import { GetHistory } from "../../wailsjs/go/main/App";
     import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
+    import { appState } from "../stores/appStore.svelte";
 
     let historyItems = $state([]);
 
@@ -94,7 +95,7 @@
                         <Icon icon={iconCopy} />
                         Копировать
                     </Button>
-                    <Button disabled>
+                    <Button onclick={() => appState.loadArticle(item)}>
                         <Icon icon={editIcon} />
                         Редактировать
                     </Button>

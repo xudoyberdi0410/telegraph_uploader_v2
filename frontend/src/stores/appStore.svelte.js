@@ -4,8 +4,11 @@ import {
     UploadChapter,
     CreateTelegraphPage,
     GetSettings,
-    SaveSettings
+    SaveSettings,
+    EditTelegraphPage,
+    GetTelegraphPage
 } from "../../wailsjs/go/main/App"
+
 
 class AppState {
     images = $state([])
@@ -13,6 +16,21 @@ class AppState {
     isProcessing = $state(false)
     statusMsg = $state("")
     finalUrl = $state("")
+    currentPage = $state("home") // Moved from App.svelte
+
+    // Edit Mode State
+    editMode = $state(false)
+    editArticlePath = $state("")
+    editAccessToken = $state("")
+
+    // Change Detection
+    savedTitle = $state("")
+    savedImagesJson = $state("[]")
+
+    isDirty = $derived(
+        this.chapterTitle !== this.savedTitle ||
+        JSON.stringify(this.images.map(i => i.id)) !== this.savedImagesJson
+    )
 
     settings = $state({
         resize: false,
@@ -27,11 +45,17 @@ class AppState {
         this.loadSettings()
     }
 
+    // Helper to snapshot current state
+    updateSavedState() {
+        this.savedTitle = this.chapterTitle;
+        this.savedImagesJson = JSON.stringify(this.images.map(i => i.id));
+    }
+
     async loadSettings() {
         try {
             const saved = await GetSettings();
             this.settings = saved;
-            this.isInitialized = true; // Разрешаем сохранение
+            this.isInitialized = true;
             console.log("Настройки загружены:", saved);
         } catch (e) {
             console.error("Не удалось загрузить настройки:", e);
@@ -44,7 +68,9 @@ class AppState {
 
         clearTimeout(this.saveTimer)
         this.saveTimer = setTimeout(() => {
-            SaveSettings($state.snapshot(this.settings));
+            const settingsToSave = $state.snapshot(this.settings);
+            settingsToSave.webp_quality = Math.round(settingsToSave.webp_quality);
+            SaveSettings(settingsToSave);
             console.log("Настройки сохранены");
         }, 500);
     }
@@ -58,7 +84,6 @@ class AppState {
 
                 const fileName = fullPath.replace(/^.*[\\/]/, "");
 
-                // Обращаемся к this.images напрямую
                 const exists = this.images.find(img => img.originalPath === fullPath);
                 if (exists) return null;
 
@@ -68,12 +93,12 @@ class AppState {
                     thumbnailSrc: `/thumbnail/${encodeURIComponent(fullPath)}`,
                     originalPath: fullPath,
                     selected: true,
+                    type: 'file' // Distinguish from 'url'
                 };
             })
             .filter(Boolean);
 
         if (newImages.length > 0) {
-            // Мутируем массив напрямую! Svelte 5 это отследит.
             this.images.push(...newImages);
             this.statusMsg = `Добавлено ${newImages.length} файлов`;
         }
@@ -88,6 +113,13 @@ class AppState {
         this.chapterTitle = "";
         this.statusMsg = "";
         this.finalUrl = "";
+
+        // Reset Edit Mode
+        this.editMode = false;
+        this.editArticlePath = "";
+        this.editAccessToken = "";
+
+        this.updateSavedState(); // Reset dirty state
     }
 
     async selectFolderAction() {
@@ -95,10 +127,14 @@ class AppState {
             const result = await OpenFolderDialog();
             if (!result || !result.path) return;
 
-            this.chapterTitle = result.title;
-            this.images = []; // Очистка
+            if (!this.editMode) {
+                this.chapterTitle = result.title;
+                this.images = [];
+            }
+            if (!this.chapterTitle) {
+                this.chapterTitle = result.title;
+            }
 
-            // Если images в result это массив путей
             this.addImagesFromPaths(result.images);
         } catch (err) {
             console.error(err);
@@ -117,7 +153,59 @@ class AppState {
         }
     }
 
-    async createArticleAction() {
+    async loadArticle(historyItem) {
+        this.clearAll();
+        this.isProcessing = true;
+        this.statusMsg = "Загрузка статьи...";
+
+        try {
+            // historyItem must have tgph_token (AccessToken)
+            // We need it for editing.
+            if (!historyItem.tgph_token && !historyItem.TgphToken) {
+                // Try to fallback or warn?
+                // If token is missing, we might fail to edit if it's not the same as global token.
+            }
+            const token = historyItem.tgph_token || historyItem.TgphToken || "";
+
+            const pageData = await GetTelegraphPage(historyItem.url);
+
+            this.editMode = true;
+            this.editAccessToken = token;
+            this.editArticlePath = pageData.path.split('/').pop(); // Extract path from URL just in case
+            this.chapterTitle = pageData.title;
+
+            const existingImages = pageData.images.map((url, idx) => ({
+                id: url, // URL as ID
+                name: `Image ${idx + 1}`,
+                thumbnailSrc: url,
+                originalPath: url,
+                selected: true,
+                type: 'url'
+            }));
+
+            this.images = existingImages;
+
+            // Set Edit Mode state
+            this.editMode = true;
+            this.editAccessToken = token;
+            this.editArticlePath = pageData.path.split('/').pop();
+            this.finalUrl = historyItem.url;
+
+            this.updateSavedState(); // Mark current state as "clean"
+
+            this.statusMsg = "Статья загружена";
+            this.currentPage = "home"; // Switch to home
+        } catch (e) {
+            console.error(e);
+            this.statusMsg = "Ошибка загрузки: " + e.message;
+            alert("Не удалось загрузить статью: " + e.message);
+            this.editMode = false; // Fallback
+        } finally {
+            this.isProcessing = false;
+        }
+    }
+
+    createArticleAction = async () => {
         const selectedImages = this.images.filter((img) => img.selected);
 
         if (selectedImages.length === 0) {
@@ -129,34 +217,100 @@ class AppState {
             return;
         }
 
-        const filesToUpload = selectedImages.map((img) => img.originalPath);
-
         this.isProcessing = true;
         this.finalUrl = "";
-        this.statusMsg = `Загрузка ${filesToUpload.length} изображений...`;
 
         try {
-            // $state.snapshot создает чистый JS объект из прокси Svelte, 
-            // это важно при передаче данных в Wails/JSON
             const settingsSnapshot = $state.snapshot(this.settings);
 
-            const uploadRes = await UploadChapter(filesToUpload, settingsSnapshot);
-            if (!uploadRes.success) throw new Error(uploadRes.error);
+            // Separate local files from existing URLs
+            const localFiles = selectedImages.filter(img => img.type === 'file').map(img => img.originalPath);
+            const existingUrls = selectedImages.filter(img => img.type === 'url').map(img => img.originalPath);
 
-            this.statusMsg = "Создание статьи в Telegraph...";
-            const telegraphLink = await CreateTelegraphPage(this.chapterTitle, uploadRes.links);
-
-            if (telegraphLink.startsWith("http")) {
-                this.finalUrl = telegraphLink;
-                this.statusMsg = "Готово!";
-            } else {
-                throw new Error(telegraphLink);
+            let newLinks = [];
+            if (localFiles.length > 0) {
+                this.statusMsg = `Загрузка ${localFiles.length} новых изображений...`;
+                const uploadRes = await UploadChapter(localFiles, settingsSnapshot);
+                if (!uploadRes.success) throw new Error(uploadRes.error);
+                newLinks = uploadRes.links;
             }
+
+            // Combine links preserving order? A bit tricky because we separated them.
+            // If user reordered images, `selectedImages` is in correct order.
+            // We need to map `selectedImages` to final URLs.
+
+            // Optimization: Create a map of localPath -> uploadedUrl
+            // But Wait, UploadChapter returns list of links corresponding to input list?
+            // "The order of files in the input list is preserved." - usually yes.
+
+            // Let's assume UploadChapter returns links in same order as input 'localFiles'.
+            let localFileIndex = 0;
+            const finalImageUrls = selectedImages.map(img => {
+                if (img.type === 'url') {
+                    return img.originalPath;
+                } else {
+                    const link = newLinks[localFileIndex];
+                    localFileIndex++;
+                    return link;
+                }
+            });
+
+            if (this.editMode) {
+                this.statusMsg = "Обновление статьи в Telegraph...";
+                // Use editArticlePath. If we have full URL, we need slug.
+                // loadArticle sets editArticlePath to slug.
+                const path = this.editArticlePath;
+                const resultUrl = await EditTelegraphPage(path, this.chapterTitle, finalImageUrls, this.editAccessToken);
+
+                if (resultUrl.startsWith("http")) {
+                    this.finalUrl = resultUrl;
+                    this.statusMsg = "Статья обновлена!";
+                    // Update state to match clean
+                    this.refreshImagesAfterSave(finalImageUrls);
+                } else {
+                    throw new Error(resultUrl);
+                }
+
+            } else {
+                this.statusMsg = "Создание статьи в Telegraph...";
+                const telegraphLink = await CreateTelegraphPage(this.chapterTitle, finalImageUrls);
+
+                if (telegraphLink.startsWith("http")) {
+                    this.finalUrl = telegraphLink;
+                    this.statusMsg = "Готово!";
+
+                    // Switch to Edit Mode for this new article
+                    this.editMode = true;
+                    // Extract path: https://telegra.ph/Some-Title-01-09 -> Some-Title-01-09
+                    const parts = telegraphLink.split('/');
+                    this.editArticlePath = parts[parts.length - 1];
+                    this.editAccessToken = ""; // Use internal default
+
+                    this.refreshImagesAfterSave(finalImageUrls);
+                } else {
+                    throw new Error(telegraphLink);
+                }
+            }
+
         } catch (e) {
             this.statusMsg = "Ошибка: " + e.message;
         } finally {
             this.isProcessing = false;
         }
+    }
+
+    refreshImagesAfterSave(newUrls) {
+        // Replace all images with type='url' and new paths, preserving order
+        // This ensures next save sees them as existing URLs
+        this.images = newUrls.map((url, idx) => ({
+            id: url,
+            name: `Image ${idx + 1}`, // Or keep original name if possible? Hard since we mapped.
+            thumbnailSrc: url,
+            originalPath: url,
+            selected: true,
+            type: 'url'
+        }));
+        this.updateSavedState();
     }
 }
 

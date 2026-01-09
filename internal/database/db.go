@@ -129,14 +129,16 @@ func (d *Database) GetHistory(limit int, offset int) []HistoryItem {
 	result := make([]HistoryItem, len(dbItems))
 	for i, item := range dbItems {
 		result[i] = HistoryItem{
-			ID:       item.ID,
-			Date:     item.CreatedAt.Format("2006-01-02 15:04:05"), // Форматируем дату здесь!
-			Title:    item.Title,
-			Url:      item.Url,
-			ImgCount: item.ImgCount,
+			ID:        item.ID,
+			Date:      item.CreatedAt.Format("2006-01-02 15:04:05"), // Форматируем дату здесь!
+			Title:     item.Title,
+			Url:       item.Url,
+			ImgCount:  item.ImgCount,
+			TgphToken: item.TgphToken, // <--- Добавили токен
 		}
 	}
 	return result
+
 
 }
 

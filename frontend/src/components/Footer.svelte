@@ -28,40 +28,6 @@
         <Button size="m" square disabled>
             <Icon icon={iconCancel} />
         </Button>
-    {:else if appState.finalUrl}
-        <div class="success-container">
-            <div class="link-info">
-                <Button
-                    square
-                    onclick={clearAll}
-                    disabled={isProcessing || !hasImages}
-                    size="m"
-                >
-                    <Icon icon={iconDelete} />
-                </Button>
-                <FAB
-                    text={appState.finalUrl}
-                    color="tertiary"
-                    onclick={copyLink}
-                />
-            </div>
-
-            <div class="actions">
-                <Button
-                    variant="tonal"
-                    size="m"
-                    square
-                    onclick={() => {
-                        BrowserOpenURL(appState.finalUrl);
-                    }}
-                >
-                    <Icon icon={iconOpen} />
-                </Button>
-                <Button variant="tonal" onclick={copyLink} size="m" square>
-                    <Icon icon={iconCopy} />
-                </Button>
-            </div>
-        </div>
     {:else}
         <Button
             size="m"
@@ -72,18 +38,46 @@
             <Icon icon={iconDelete} />
         </Button>
         <div class="card-wrapper">
-            <Card variant="outlined">
-                Pages: {pageCount}
-            </Card>
+            {#if appState.finalUrl}
+                <div class="success-container">
+                    <FAB
+                        text={appState.finalUrl}
+                        color="tertiary"
+                        onclick={copyLink}
+                    />
+                    <div class="actions">
+                        <Button
+                            variant="tonal"
+                            size="m"
+                            square
+                            onclick={() => {
+                                BrowserOpenURL(appState.finalUrl);
+                            }}
+                        >
+                            <Icon icon={iconOpen} />
+                        </Button>
+                        <Button variant="tonal" onclick={copyLink} size="m" square>
+                            <Icon icon={iconCopy} />
+                        </Button>
+                    </div>
+                </div>
+            {:else}
+                <Card variant="outlined">
+                    Pages: {pageCount}
+                </Card>
+            {/if}
         </div>
+        
+        <!-- Only for testing visual feedback, added tonal variant if editing -->
         <Button
             size="m"
             square
             onclick={createArticleAction}
-            disabled={isProcessing || !hasImages}
+            disabled={isProcessing || !hasImages || (appState.editMode && !appState.isDirty)}
+            variant={appState.editMode ? "filled" : "tonal"}  
         >
-            Telegraph</Button
-        >
+            {appState.editMode ? "Обновить" : "Опубликовать"}
+        </Button>
     {/if}
 </footer>
 

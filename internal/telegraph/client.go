@@ -1,4 +1,4 @@
-package telegraph // <--- Лучше назвать пакет так же, как папку
+package telegraph
 
 import (
 	"encoding/json"
@@ -126,4 +126,105 @@ func createTelegraphAccount(shortName string) (string, error) {
 		return "", fmt.Errorf("не удалось создать аккаунт")
 	}
 	return acc.Result.AccessToken, nil
+}
+
+// EditPage редактирует существующую страницу
+func (c *Client) EditPage(path string, title string, imageUrls []string, accessToken string) string {
+	// Если токен не передан, берем из конфига (но лучше передавать тот, которым создавали)
+	token := accessToken
+	if token == "" {
+		token = c.Token
+	}
+
+	// Формируем контент
+	var content []TelegraphNode
+	for _, link := range imageUrls {
+		node := TelegraphNode{
+			Tag: "img",
+			Attrs: map[string]string{
+				"src": link,
+			},
+		}
+		content = append(content, node)
+	}
+
+	contentJson, err := json.Marshal(content)
+	if err != nil {
+		return "Ошибка JSON: " + err.Error()
+	}
+
+	apiURL := "https://api.telegra.ph/editPage"
+	data := url.Values{}
+	data.Set("access_token", token)
+	data.Set("path", path)
+	data.Set("title", title)
+	data.Set("content", string(contentJson))
+	data.Set("return_content", "false")
+
+	resp, err := http.PostForm(apiURL, data)
+	if err != nil {
+		return "Ошибка сети Telegraph: " + err.Error()
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	
+	var tgResp TelegraphResponse
+	if err := json.Unmarshal(body, &tgResp); err != nil {
+		return "Ошибка ответа API: " + string(body)
+	}
+
+	if !tgResp.Ok {
+		return "Telegraph API Error: " + tgResp.Error
+	}
+
+	// Успех, возвращаем URL (хотя он не меняется при редактировании)
+	return tgResp.Result.Url
+}
+
+type PageResponse struct {
+	Ok     bool `json:"ok"`
+	Result struct {
+		Title   string        `json:"title"`
+		Content []interface{} `json:"content"` // Content может быть строками или объектами
+	} `json:"result"`
+	Error string `json:"error"`
+}
+
+// GetPage получает заголовок и список изображений со страницы
+func (c *Client) GetPage(path string) (string, []string, error) {
+	apiURL := fmt.Sprintf("https://api.telegra.ph/getPage/%s?return_content=true", path)
+	
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var pageResp PageResponse
+	if err := json.Unmarshal(body, &pageResp); err != nil {
+		return "", nil, err
+	}
+
+	if !pageResp.Ok {
+		return "", nil, fmt.Errorf(pageResp.Error)
+	}
+
+	var imageUrls []string
+	for _, node := range pageResp.Result.Content {
+		// Node может быть map[string]interface{} (если это тег)
+		if nodeMap, ok := node.(map[string]interface{}); ok {
+			if tag, ok := nodeMap["tag"].(string); ok && tag == "img" {
+				if attrs, ok := nodeMap["attrs"].(map[string]interface{}); ok {
+					if src, ok := attrs["src"].(string); ok {
+						imageUrls = append(imageUrls, src)
+					}
+				}
+			}
+		}
+	}
+
+	return pageResp.Result.Title, imageUrls, nil
 }
