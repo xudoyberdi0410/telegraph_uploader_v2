@@ -53,6 +53,14 @@ func New(cfg *config.Config) (*R2Uploader, error) {
 	}, nil
 }
 
+// NewWithClient creates uploader with specific minio client (useful for tests)
+func NewWithClient(client *minio.Client, cfg *config.Config) *R2Uploader {
+	return &R2Uploader{
+		client: client,
+		cfg:    cfg,
+	}
+}
+
 // UploadChapter теперь метод структуры, а не просто функция
 func (u *R2Uploader) UploadChapter(filePaths []string, resizeSettings ResizeSettings) UploadResult {
 	maxWorkers := runtime.NumCPU()

@@ -12,13 +12,15 @@ import (
 
 // Client хранит настройки для работы с Telegraph
 type Client struct {
-	Token string
+	Token   string
+	BaseURL string
 }
 
 // New создает нового клиента. Мы передаем ему конфиг целиком.
 func New(cfg *config.Config) *Client {
 	return &Client{
-		Token: cfg.TelegraphToken,
+		Token:   cfg.TelegraphToken,
+		BaseURL: "https://api.telegra.ph",
 	}
 }
 
@@ -45,7 +47,7 @@ func (c *Client) CreatePage(title string, imageUrls []string) string {
 	// Если токена нет в конфиге, создаем временный аккаунт
 	if token == "" {
 		var err error
-		token, err = createTelegraphAccount("MangaUploader")
+		token, err = c.createAccount("MangaUploader")
 		if err != nil {
 			return "Ошибка создания аккаунта Telegraph: " + err.Error()
 		}
@@ -71,7 +73,7 @@ func (c *Client) CreatePage(title string, imageUrls []string) string {
 		return "Ошибка JSON: " + err.Error()
 	}
 
-	apiURL := "https://api.telegra.ph/createPage"
+	apiURL := c.BaseURL + "/createPage"
 	data := url.Values{}
 	data.Set("access_token", token)
 	data.Set("title", title)
@@ -98,9 +100,14 @@ func (c *Client) CreatePage(title string, imageUrls []string) string {
 	return tgResp.Result.Url
 }
 
-// Вспомогательная функция (private)
-func createTelegraphAccount(shortName string) (string, error) {
-	apiURL := "https://api.telegra.ph/createAccount"
+// Вспомогательная функция (private) - NOTE: This uses hardcoded URL as it is a standalone helper? 
+// No, it's safer to leave it or refactor it too. But `createTelegraphAccount` is a standalone function not attached to Client.
+// For now, I'll leave it hardcoded or make it a method if needed. But let's check usage.
+// It is used in CreatePage: `token, err = createTelegraphAccount("MangaUploader")`
+// This makes CreatePage hard to test if token is missing. We should supply token in test.
+// createAccount creates a new account
+func (c *Client) createAccount(shortName string) (string, error) {
+	apiURL := c.BaseURL + "/createAccount"
 	data := url.Values{}
 	data.Set("short_name", shortName)
 	data.Set("author_name", "MangaBot")
@@ -153,7 +160,7 @@ func (c *Client) EditPage(path string, title string, imageUrls []string, accessT
 		return "Ошибка JSON: " + err.Error()
 	}
 
-	apiURL := "https://api.telegra.ph/editPage"
+	apiURL := c.BaseURL + "/editPage"
 	data := url.Values{}
 	data.Set("access_token", token)
 	data.Set("path", path)
@@ -193,7 +200,7 @@ type PageResponse struct {
 
 // GetPage получает заголовок и список изображений со страницы
 func (c *Client) GetPage(path string) (string, []string, error) {
-	apiURL := fmt.Sprintf("https://api.telegra.ph/getPage/%s?return_content=true", path)
+	apiURL := fmt.Sprintf("%s/getPage/%s?return_content=true", c.BaseURL, path)
 	
 	resp, err := http.Get(apiURL)
 	if err != nil {
@@ -209,7 +216,8 @@ func (c *Client) GetPage(path string) (string, []string, error) {
 	}
 
 	if !pageResp.Ok {
-		return "", nil, fmt.Errorf(pageResp.Error)
+		// Fix vet error: non-constant format string
+		return "", nil, fmt.Errorf("%s", pageResp.Error)
 	}
 
 	var imageUrls []string

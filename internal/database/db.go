@@ -44,15 +44,28 @@ type Database struct {
 	conn *gorm.DB
 }
 
+// Close closes the underlying database connection
+func (d *Database) Close() error {
+	sqlDB, err := d.conn.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}
+
+
 // Init инициализирует БД и создает файл database.db
 func Init() (*Database, error) {
-	// Определяем путь к файлу БД (рядом с exe)
 	ex, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
 	dbPath := filepath.Join(filepath.Dir(ex), "database.db")
+	return InitWithFile(dbPath)
+}
 
+// InitWithFile initializes DB at specific path
+func InitWithFile(dbPath string) (*Database, error) {
 	// Настройка логгера (чтобы не спамил в консоль, если не нужно)
 	newLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
@@ -90,6 +103,13 @@ func Init() (*Database, error) {
 	}
 
 	return &Database{conn: db}, nil
+}
+
+// New allows creating Database with existing connection (useful for tests)
+func New(db *gorm.DB) *Database {
+	// AutoMigrate is idempotent, safe to call
+	db.AutoMigrate(&Settings{}, &dbHistory{})
+	return &Database{conn: db}
 }
 
 // --- Методы для Настроек ---

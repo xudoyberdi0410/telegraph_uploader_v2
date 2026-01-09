@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"fmt"
 	
 	"telegraph_uploader_v2/internal/config"
 	"telegraph_uploader_v2/internal/database"
@@ -17,12 +16,30 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// DialogProvider interface mocks Wails dialogs
+type DialogProvider interface {
+	OpenDirectory(ctx context.Context, options wailsRuntime.OpenDialogOptions) (string, error)
+	OpenMultipleFiles(ctx context.Context, options wailsRuntime.OpenDialogOptions) ([]string, error)
+}
+
+// WailsDialogProvider implements DialogProvider using real Wails runtime
+type WailsDialogProvider struct{}
+
+func (w *WailsDialogProvider) OpenDirectory(ctx context.Context, options wailsRuntime.OpenDialogOptions) (string, error) {
+	return wailsRuntime.OpenDirectoryDialog(ctx, options)
+}
+
+func (w *WailsDialogProvider) OpenMultipleFiles(ctx context.Context, options wailsRuntime.OpenDialogOptions) ([]string, error) {
+	return wailsRuntime.OpenMultipleFilesDialog(ctx, options)
+}
+
 type App struct {
 	ctx      context.Context
 	config   *config.Config
 	uploader *uploader.R2Uploader
 	tgClient *telegraph.Client
 	db       *database.Database
+	dialogs  DialogProvider
 }
 
 func NewApp() *App {
@@ -59,6 +76,7 @@ func NewApp() *App {
 		uploader: upl,
 		tgClient: tg,
 		db:       dbService,
+		dialogs:  &WailsDialogProvider{},
 	}
 }
 
@@ -137,9 +155,7 @@ func (a *App) GetTelegraphPage(pageUrl string) (ChapterResponse, error) {
 	
 	// Извлекаем slug из URL
 	parts := strings.Split(pageUrl, "/")
-	if len(parts) == 0 {
-		return ChapterResponse{}, fmt.Errorf("invalid url")
-	}
+	// Split always returns at least one element
 	path := parts[len(parts)-1]
 
 	title, images, err := a.tgClient.GetPage(path)
@@ -162,7 +178,7 @@ func (a *App) GetTelegraphPage(pageUrl string) (ChapterResponse, error) {
 func (a *App) OpenFolderDialog() (ChapterResponse, error) {
 	log.Println("[App] OpenFolderDialog called")
 
-	selection, err := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+	selection, err := a.dialogs.OpenDirectory(a.ctx, wailsRuntime.OpenDialogOptions{
 		Title: "Выберите папку с главой",
 	})
 	if err != nil {
@@ -197,7 +213,7 @@ func (a *App) OpenFolderDialog() (ChapterResponse, error) {
 func (a *App) OpenFilesDialog() ([]string, error) {
 	log.Println("[App] OpenFilesDialog called")
 
-	selection, err := wailsRuntime.OpenMultipleFilesDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+	selection, err := a.dialogs.OpenMultipleFiles(a.ctx, wailsRuntime.OpenDialogOptions{
 		Title: "Выберите изображения",
 		Filters: []wailsRuntime.FileFilter{
 			{
