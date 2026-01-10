@@ -8,6 +8,7 @@
     import Home from "./views/Home.svelte";
     import Settings from "./views/Settings.svelte";
     import History from "./views/History.svelte";
+    import Telegram from "./views/Telegram.svelte";
 
     import { appState } from "./stores/appStore.svelte"; // Import appState
     
@@ -39,6 +40,14 @@
             selected={appState.currentPage === "history"}
             onclick={() => (appState.currentPage = "history")}
         />
+
+        <NavCMLXItem
+            variant="auto"
+            icon={iconHistory}
+            text="Telegram"
+            selected={appState.currentPage === "telegram"}
+            onclick={() => (appState.currentPage = "telegram")}
+        />
     </NavCMLX>
 
     <main class="content">
@@ -48,6 +57,8 @@
             <Settings />
         {:else if appState.currentPage === "history"}
             <History />
+        {:else if appState.currentPage === "telegram"}
+            <Telegram />
         {/if}
     </main>
 </div>

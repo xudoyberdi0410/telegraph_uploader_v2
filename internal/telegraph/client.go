@@ -100,12 +100,6 @@ func (c *Client) CreatePage(title string, imageUrls []string) string {
 	return tgResp.Result.Url
 }
 
-// Вспомогательная функция (private) - NOTE: This uses hardcoded URL as it is a standalone helper? 
-// No, it's safer to leave it or refactor it too. But `createTelegraphAccount` is a standalone function not attached to Client.
-// For now, I'll leave it hardcoded or make it a method if needed. But let's check usage.
-// It is used in CreatePage: `token, err = createTelegraphAccount("MangaUploader")`
-// This makes CreatePage hard to test if token is missing. We should supply token in test.
-// createAccount creates a new account
 func (c *Client) createAccount(shortName string) (string, error) {
 	apiURL := c.BaseURL + "/createAccount"
 	data := url.Values{}

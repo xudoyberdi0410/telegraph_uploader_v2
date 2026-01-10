@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -12,10 +13,38 @@ import (
 )
 
 type Settings struct {
-	ID          uint `gorm:"primaryKey"`
-	Resize      bool
-	ResizeTo    int
-	WebpQuality int
+	ID              uint `gorm:"primaryKey"`
+	Resize          bool
+	ResizeTo        int
+	WebpQuality     int
+	LastChannelID   int64 // Last selected telegram channel ID
+	LastChannelHash int64
+}
+
+type Title struct {
+	ID        uint            `gorm:"primaryKey" json:"id"`
+	Name      string          `gorm:"unique" json:"name"`
+	Folders   []TitleFolder   `gorm:"foreignKey:TitleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"folders"`
+	Variables []TitleVariable `gorm:"foreignKey:TitleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"variables"`
+}
+
+type TitleFolder struct {
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	TitleID uint   `json:"title_id"`
+	Path    string `gorm:"index" json:"path"` // Path string to match
+}
+
+type TitleVariable struct {
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	TitleID uint   `json:"title_id"`
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+}
+
+type Template struct {
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	Name    string `gorm:"unique" json:"name"`
+	Content string `json:"content"` // HTML/Markdown content
 }
 
 type dbHistory struct {
@@ -25,6 +54,7 @@ type dbHistory struct {
 	Url       string
 	ImgCount  int
 	TgphToken string
+	TitleID   *uint // Link to Title
 }
 
 func (dbHistory) TableName() string {
@@ -38,6 +68,7 @@ type HistoryItem struct {
 	Url       string `json:"url"`
 	ImgCount  int    `json:"img_count"`
 	TgphToken string `json:"tgph_token"`
+	TitleID   *uint  `json:"title_id"`
 }
 
 type Database struct {
@@ -52,7 +83,6 @@ func (d *Database) Close() error {
 	}
 	return sqlDB.Close()
 }
-
 
 // Init инициализирует БД и создает файл database.db
 func Init() (*Database, error) {
@@ -86,7 +116,7 @@ func InitWithFile(dbPath string) (*Database, error) {
 	}
 
 	// Автоматическая миграция (создает таблицы, если их нет)
-	err = db.AutoMigrate(&Settings{}, &dbHistory{})
+	err = db.AutoMigrate(&Settings{}, &dbHistory{}, &Title{}, &TitleFolder{}, &TitleVariable{}, &Template{})
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +138,7 @@ func InitWithFile(dbPath string) (*Database, error) {
 // New allows creating Database with existing connection (useful for tests)
 func New(db *gorm.DB) *Database {
 	// AutoMigrate is idempotent, safe to call
-	db.AutoMigrate(&Settings{}, &dbHistory{})
+	db.AutoMigrate(&Settings{}, &dbHistory{}, &Title{}, &TitleFolder{}, &TitleVariable{}, &Template{})
 	return &Database{conn: db}
 }
 
@@ -129,12 +159,13 @@ func (d *Database) UpdateSettings(s Settings) {
 
 // --- Методы для Истории ---
 
-func (d *Database) AddHistory(title, url string, imgCount int, tgphToken string) error{
+func (d *Database) AddHistory(title, url string, imgCount int, tgphToken string, titleID *uint) error {
 	err := d.conn.Create(&dbHistory{
 		Title:     title,
 		Url:       url,
 		ImgCount:  imgCount,
 		TgphToken: tgphToken,
+		TitleID:   titleID,
 	}).Error
 	return err
 }
@@ -155,14 +186,138 @@ func (d *Database) GetHistory(limit int, offset int) []HistoryItem {
 			Url:       item.Url,
 			ImgCount:  item.ImgCount,
 			TgphToken: item.TgphToken, // <--- Добавили токен
+			TitleID:   item.TitleID,
 		}
 	}
 	return result
-
 
 }
 
 func (d *Database) ClearHistory() {
 	// Удаляет все записи (мягкое удаление или полное - тут используем Unscoped для полного)
 	d.conn.Unscoped().Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&dbHistory{})
+}
+
+// --- Методы для Настроек ---
+
+func (d *Database) GetHistoryByID(id uint) (HistoryItem, error) {
+	var item dbHistory
+	err := d.conn.First(&item, id).Error
+	if err != nil {
+		return HistoryItem{}, err
+	}
+	return HistoryItem{
+		ID:        item.ID,
+		Date:      item.CreatedAt.Format("2006-01-02 15:04:05"),
+		Title:     item.Title,
+		Url:       item.Url,
+		ImgCount:  item.ImgCount,
+		TgphToken: item.TgphToken,
+		TitleID:   item.TitleID,
+	}, nil
+}
+
+// --- Методы для Тайтлов ---
+
+func (d *Database) CreateTitle(name string) error {
+	return d.conn.Create(&Title{Name: name}).Error
+}
+
+func (d *Database) GetTitles() []Title {
+	var titles []Title
+	d.conn.Preload("Folders").Preload("Variables").Find(&titles)
+	return titles
+}
+
+func (d *Database) UpdateTitle(t Title) error {
+	// Gorm full update with associations is tricky.
+	// Easiest is to save basic info, then replace associations if needed.
+	// For now, let's just save the Title struct.
+	// But we need to handle Folders and Variables.
+	// Simplest: Delete existing folders/vars and re-create? Or just Save.
+
+	return d.conn.Session(&gorm.Session{FullSaveAssociations: true}).Save(&t).Error
+}
+
+func (d *Database) DeleteTitle(id uint) error {
+	return d.conn.Delete(&Title{}, id).Error
+}
+
+func (d *Database) GetTitleByID(id uint) (Title, error) {
+	var t Title
+	err := d.conn.Preload("Variables").Preload("Folders").First(&t, id).Error
+	return t, err
+}
+
+// SearchTitleByPath tries to find a title that has a folder matching the path
+// Logic: exact match or maybe parent match?
+// User said: "program based on path to pages determines what manga it is"
+// If we store "/foo/bar/manga_name", and images are in "/foo/bar/manga_name/chapter1",
+// we should match if the folder path starts with the stored path.
+func (d *Database) FindTitleByPath(path string) (Title, error) {
+	var folders []TitleFolder
+	// We get all folders and check in Go, or use SQL LIKE.
+	// Since paths can be complex (backslashes etc), doing it in Go might be safer for logic customization.
+	// But for performance, let's try SQL.
+	// We want where `path` starts with `folder.Path`
+	// Actually, usually user sets a root folder for the manga.
+	// E.g. Root: C:\Manga\Naruto
+	// Chapter: C:\Manga\Naruto\Chapter 1
+	// Client path provided is likely the chapter folder.
+	// So we check if `path` contains `folder.Path`.
+
+	// Normalize path?
+	path = filepath.Clean(path)
+
+	// Fetch all folders? (Assuming not too many)
+	d.conn.Find(&folders)
+
+	var bestMatch *TitleFolder
+	var maxLen int
+
+	for _, f := range folders {
+		// making sure we compare correctly
+		// Check if 'path' has prefix 'f.Path'
+		// Case insensitive for Windows?
+		// Let's rely on simple string check for now.
+		if len(f.Path) > 0 && (strings.HasPrefix(strings.ToLower(path), strings.ToLower(f.Path))) {
+			if len(f.Path) > maxLen {
+				maxLen = len(f.Path)
+				match := f // copy
+				bestMatch = &match
+			}
+		}
+	}
+
+	if bestMatch != nil {
+		return d.GetTitleByID(bestMatch.TitleID)
+	}
+
+	return Title{}, gorm.ErrRecordNotFound
+}
+
+// --- Методы для Шаблонов ---
+
+func (d *Database) CreateTemplate(name, content string) error {
+	return d.conn.Create(&Template{Name: name, Content: content}).Error
+}
+
+func (d *Database) GetTemplates() []Template {
+	var t []Template
+	d.conn.Find(&t)
+	return t
+}
+
+func (d *Database) UpdateTemplate(t Template) error {
+	return d.conn.Save(&t).Error
+}
+
+func (d *Database) GetTemplateByID(id uint) (Template, error) {
+	var t Template
+	err := d.conn.First(&t, id).Error
+	return t, err
+}
+
+func (d *Database) DeleteTemplate(id uint) error {
+	return d.conn.Delete(&Template{}, id).Error
 }

@@ -9,12 +9,14 @@ import (
 )
 
 type Config struct {
-	R2AccountId    string `json:"r2_account_id"`
-	R2AccessKey    string `json:"r2_access_key"`
-	R2SecretKey    string `json:"r2_secret_key"`
-	BucketName     string `json:"bucket_name"`
-	PublicDomain   string `json:"public_domain"`
-	TelegraphToken string `json:"telegraph_token"` // Опционально: токен Telegraph
+	R2AccountId     string `json:"r2_account_id"`
+	R2AccessKey     string `json:"r2_access_key"`
+	R2SecretKey     string `json:"r2_secret_key"`
+	BucketName      string `json:"bucket_name"`
+	PublicDomain    string `json:"public_domain"`
+	TelegraphToken  string `json:"telegraph_token"`
+	TelegramAppId   int    `json:"telegram_app_id"`
+	TelegramApiHash string `json:"telegram_app_hash"`
 }
 
 // loadConfig ищет config.json рядом с исполняемым файлом
@@ -41,7 +43,7 @@ func Load() (*Config, error) {
 	defer file.Close()
 
 	bytesValue, _ := io.ReadAll(file)
-	
+
 	var cfg Config // Создаем локальную переменную
 	err = json.Unmarshal(bytesValue, &cfg)
 	if err != nil {

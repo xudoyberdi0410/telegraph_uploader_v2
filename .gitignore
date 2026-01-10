@@ -10,3 +10,4 @@ api.txt
 project_assembler.py
 
 *.log
+*-session.json
