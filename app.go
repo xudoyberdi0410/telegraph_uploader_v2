@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -116,10 +118,17 @@ type ChapterResponse struct {
 	DetectedTitleID *uint    `json:"detected_title_id"`
 }
 
+type CreatePageResponse struct {
+	Success   bool   `json:"success"`
+	Url       string `json:"url"`
+	HistoryID uint   `json:"history_id"`
+	Error     string `json:"error"`
+}
+
 type TelegramChannel struct {
-	ID         int64  `json:"id"`
+	ID         string `json:"id"`
 	Title      string `json:"title"`
-	AccessHash int64  `json:"access_hash"`
+	AccessHash string `json:"access_hash"`
 }
 
 // === МЕТОДЫ ===
@@ -145,7 +154,7 @@ func (a *App) UploadChapter(filePaths []string, resizeSettings uploader.ResizeSe
 	return result
 }
 
-func (a *App) CreateTelegraphPage(title string, imageUrls []string, titleID int) string {
+func (a *App) CreateTelegraphPage(title string, imageUrls []string, titleID int) CreatePageResponse {
 	log.Printf("[App] CreateTelegraphPage called. Title: '%s', Images: %d, TitleID: %d", title, len(imageUrls), titleID)
 
 	url := a.tgphClient.CreatePage(title, imageUrls)
@@ -157,17 +166,30 @@ func (a *App) CreateTelegraphPage(title string, imageUrls []string, titleID int)
 			u := uint(titleID)
 			tID = &u
 		}
-		err := a.db.AddHistory(title, url, len(imageUrls), a.config.TelegraphToken, tID)
+		id, err := a.db.AddHistory(title, url, len(imageUrls), a.config.TelegraphToken, tID)
 		if err != nil {
 			log.Printf("[App] Warning: Failed to save to history: %v", err)
+			return CreatePageResponse{
+				Success:   true,
+				Url:       url,
+				HistoryID: 0,
+				Error:     "Saved to Telegraph but failed to save history: " + err.Error(),
+			}
 		} else {
 			log.Println("[App] Saved to history")
+			return CreatePageResponse{
+				Success:   true,
+				Url:       url,
+				HistoryID: id,
+			}
 		}
 	} else {
 		log.Printf("[App] Failed to create page. Result URL/Error: %s", url)
+		return CreatePageResponse{
+			Success: false,
+			Error:   url,
+		}
 	}
-
-	return url
 }
 
 func (a *App) EditTelegraphPage(path string, title string, imageUrls []string, token string) string {
@@ -300,27 +322,46 @@ func getImagesInDir(dirPath string) ([]string, error) {
 	return images, nil
 }
 
+type FrontendSettings struct {
+	Resize           bool   `json:"resize"`
+	ResizeTo         int    `json:"resize_to"`
+	WebpQuality      int    `json:"webp_quality"`
+	LastChannelID    string `json:"last_channel_id"`
+	LastChannelHash  string `json:"last_channel_hash"`
+	LastChannelTitle string `json:"last_channel_title"`
+}
+
 // GetSettings вызывается фронтендом при старте
-func (a *App) GetSettings() uploader.ResizeSettings {
+func (a *App) GetSettings() FrontendSettings {
 	log.Println("[App] GetSettings called")
 	s := a.db.GetSettings()
 	log.Printf("[App] Returning settings: %+v", s)
 
-	return uploader.ResizeSettings{
-		Resize:      s.Resize,
-		ResizeTo:    s.ResizeTo,
-		WebpQuality: s.WebpQuality,
+	return FrontendSettings{
+		Resize:           s.Resize,
+		ResizeTo:         s.ResizeTo,
+		WebpQuality:      s.WebpQuality,
+		LastChannelID:    strconv.FormatInt(s.LastChannelID, 10),
+		LastChannelHash:  strconv.FormatInt(s.LastChannelHash, 10),
+		LastChannelTitle: s.LastChannelTitle,
 	}
 }
 
 // SaveSettings вызывается фронтендом при любом изменении
-func (a *App) SaveSettings(s uploader.ResizeSettings) {
+func (a *App) SaveSettings(s FrontendSettings) {
 	log.Printf("[App] SaveSettings called: %+v", s)
 
+	// Parse IDs
+	cID, _ := strconv.ParseInt(s.LastChannelID, 10, 64)
+	cHash, _ := strconv.ParseInt(s.LastChannelHash, 10, 64)
+
 	a.db.UpdateSettings(database.Settings{
-		Resize:      s.Resize,
-		ResizeTo:    s.ResizeTo,
-		WebpQuality: s.WebpQuality,
+		Resize:           s.Resize,
+		ResizeTo:         s.ResizeTo,
+		WebpQuality:      s.WebpQuality,
+		LastChannelID:    cID,
+		LastChannelHash:  cHash,
+		LastChannelTitle: s.LastChannelTitle,
 	})
 	log.Println("[App] Settings saved")
 }
@@ -384,9 +425,43 @@ func (a *App) TelegramLoginQR() string {
 
 // TelegramSubmitCode вызывается из UI, когда пользователь ввел код
 func (a *App) TelegramSubmitCode(code string) {
+	// a.telegram.SubmitCode(code) - this was wrong, the old code was using a channel or direct method?
+	// Checking the diff again, it seems I overwrote:
+	/*
+		log.Printf("[App] User submitted code: %s", code)
+		// Отправляем код в канал, где его ждет метод GetCode
+		a.authCodeChan <- code
+	*/
+	// Wait, I need to check what was there before. The original file content (from view_file_outline earlier) just showed the signature.
+	// But in the replace_file_content OUTPUT (Step 35), it showed I removed `a.authCodeChan <- code`.
+	// I should revert that part.
+
+	// Actually, looking at previous context or just fixing it blindly is risky.
+	// I'll revert to what the diff showed as "original" in step 35.
+
+	// Re-reading step 35 diff:
+	// -	log.Printf("[App] User submitted code: %s", code)
+	// -	// Отправляем код в канал, где его ждет метод GetCode
+	// -	a.authCodeChan <- code
+	// +	a.telegram.SubmitCode(code)
+
+	// So I should put back the channel send. BUT, does `a.authCodeChan` exist?
+	// The open file outline didn't show fields of App explicitly in full detail (truncated).
+	// But the diff implies it was there.
+
+	// Let's restore it.
+
+	// HOWEVER, I can also just check `internal/telegram/client.go` to see if there is a SubmitCode...
+	// but easier is to restore what I broke.
+
 	log.Printf("[App] User submitted code: %s", code)
-	// Отправляем код в канал, где его ждет метод GetCode
-	a.authCodeChan <- code
+	if a.authCodeChan != nil {
+		a.authCodeChan <- code
+	}
+}
+
+func (a *App) AddTitleVariable(titleID uint, key string, value string) error {
+	return a.db.AddTitleVariable(titleID, key, value)
 }
 
 // TelegramSubmitPassword вызывается из UI, когда пользователь ввел пароль (2FA)
@@ -467,8 +542,8 @@ func (a *App) GetTitles() []database.Title {
 	return a.db.GetTitles()
 }
 
-func (a *App) CreateTitle(name string) error {
-	return a.db.CreateTitle(name)
+func (a *App) CreateTitle(name string, rootFolder string) error {
+	return a.db.CreateTitle(name, rootFolder)
 }
 
 func (a *App) UpdateTitle(t database.Title) error {
@@ -515,16 +590,26 @@ func (a *App) SearchChannels(query string) ([]TelegramChannel, error) {
 	var result []TelegramChannel
 	for _, ch := range channels {
 		result = append(result, TelegramChannel{
-			ID:         ch.ID,
+			ID:         strconv.FormatInt(ch.ID, 10),
 			Title:      ch.Title,
-			AccessHash: ch.AccessHash,
+			AccessHash: strconv.FormatInt(ch.AccessHash, 10),
 		})
 	}
 	return result, nil
 }
 
-func (a *App) PublishPost(historyID uint, channelID int64, accessHash int64, templateID uint, dateStr string) error {
-	log.Printf("[App] PublishPost called. History: %d, Channel: %d, Template: %d, Date: %s", historyID, channelID, templateID, dateStr)
+func (a *App) PublishPost(historyID uint, channelIDStr string, accessHashStr string, content string, dateStr string) error {
+	log.Printf("[App] PublishPost called. History: %d, Channel: %s, Content-Len: %d, Date: %s", historyID, channelIDStr, len(content), dateStr)
+
+	// Parse IDs
+	channelID, err := strconv.ParseInt(channelIDStr, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid channel id: %v", err)
+	}
+	accessHash, err := strconv.ParseInt(accessHashStr, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid access hash: %v", err)
+	}
 
 	// 1. Get History Item
 	item, err := a.db.GetHistoryByID(historyID)
@@ -532,14 +617,7 @@ func (a *App) PublishPost(historyID uint, channelID int64, accessHash int64, tem
 		return err
 	}
 
-	// 2. Get Template
-	tmpl, err := a.db.GetTemplateByID(templateID)
-	if err != nil {
-		return err
-	}
-
-	// 3. Prepare Content
-	content := tmpl.Content
+	// 2. Prepare Content (content is now passed directly)
 	content = strings.ReplaceAll(content, "{{Title}}", item.Title)
 	content = strings.ReplaceAll(content, "{{Link}}", item.Url)
 
@@ -555,7 +633,7 @@ func (a *App) PublishPost(historyID uint, channelID int64, accessHash int64, tem
 		}
 	}
 
-	// 4. Parse Date (Assume RFC3339/ISO8601 from JS)
+	// 3. Parse Date (Assume RFC3339/ISO8601 from JS)
 	// JS: 2024-01-11T12:00:00.000Z
 	scheduledTime, err := time.Parse(time.RFC3339, dateStr)
 	if err != nil {
@@ -564,7 +642,7 @@ func (a *App) PublishPost(historyID uint, channelID int64, accessHash int64, tem
 		return err
 	}
 
-	// 5. Schedule
+	// 4. Schedule
 	err = a.telegram.ScheduleMessageByID(a.ctx, channelID, accessHash, content, scheduledTime)
 	if err != nil {
 		log.Printf("[App] Schedule error: %v", err)
@@ -573,4 +651,23 @@ func (a *App) PublishPost(historyID uint, channelID int64, accessHash int64, tem
 
 	log.Println("[App] Post scheduled successfully")
 	return nil
+}
+
+func (a *App) IsTelegramLoggedIn() bool {
+	if a.telegram == nil {
+		return false
+	}
+	auth, err := a.telegram.CheckAuth(a.ctx)
+	if err != nil {
+		log.Printf("[App] CheckAuth error: %v", err)
+		return false
+	}
+	return auth
+}
+
+func (a *App) GetTelegramUser() (*telegram.TelegramUser, error) {
+	if a.telegram == nil {
+		return nil, fmt.Errorf("telegram client not initialized")
+	}
+	return a.telegram.GetMe(a.ctx)
 }

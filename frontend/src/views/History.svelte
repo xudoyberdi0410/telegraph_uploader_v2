@@ -62,6 +62,14 @@
             return dateStr;
         }
     }
+
+    function publishAction(item) {
+        appState.navigateTo("telegram", {
+            historyId: item.id,
+            articleTitle: item.title,
+            titleId: item.title_id || 0,
+        });
+    }
 </script>
 
 <Snackbar />
@@ -99,7 +107,7 @@
                         <Icon icon={editIcon} />
                         Редактировать
                     </Button>
-                    <Button disabled>
+                    <Button onclick={() => publishAction(item)}>
                         <Icon icon={iconShare} />
                         Опубликовать
                     </Button>

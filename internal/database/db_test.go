@@ -61,12 +61,12 @@ func TestHistoryOperations(t *testing.T) {
 	d := setupTestDB(t)
 
 	// Add items
-	err := d.AddHistory("Test Title 1", "http://url1", 5, "token1")
+	err := d.AddHistory("Test Title 1", "http://url1", 5, "token1", nil)
 	if err != nil {
 		t.Fatalf("failed to add history: %v", err)
 	}
 	time.Sleep(10 * time.Millisecond) // Ensure timestamp difference
-	err = d.AddHistory("Test Title 2", "http://url2", 10, "token2")
+	err = d.AddHistory("Test Title 2", "http://url2", 10, "token2", nil)
 	if err != nil {
 		t.Fatalf("failed to add history: %v", err)
 	}
@@ -126,10 +126,7 @@ func TestInitWithFile(t *testing.T) {
 }
 
 func TestInitWithFile_Error(t *testing.T) {
-	// Invalid path (directory instead of file) or system root
-	// On Windows, maybe "C:/"? Or invalid chars.
-	// ":" is invalid in filename usually.
-	_, err := InitWithFile(":") // Should fail on sqlite open/creation
+	_, err := InitWithFile(":")
 	if err == nil {
 		t.Error("expected error for invalid path")
 	}
@@ -164,26 +161,17 @@ func TestDatabase_Errors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitWithFile failed: %v", err)
 	}
-	
+
 	// Close it to trigger errors
 	db.Close()
-	
+
 	// Test AddHistory on closed DB
-	err = db.AddHistory("Title", "url", 1, "tok")
+	err = db.AddHistory("Title", "url", 1, "tok", nil)
 	if err == nil {
-		// Gorm/SQLite might not error immediately on Close if using pure go driver or in-memory, 
-		// but with file it should. 
-		// Actually "sql: database is closed" is expected.
-		// If it doesn't error, we might need another way to break it.
-		// t.Error("expected error on closed DB for AddHistory") 
-		// (Commented out because GORM behavior on closed DB is sometimes tricky to test deterministically on all drivers, but let's try)
 	}
 
-	// Test GetSettings (should return empty/default or error log?)
-	// GetSettings returns struct, swallows error (log only). 
-	// Coverage should hit the error path inside gorm execution if possible.
 	db.GetSettings()
-	
+
 	// UpdateSettings
 	db.UpdateSettings(Settings{})
 }

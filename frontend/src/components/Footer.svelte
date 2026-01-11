@@ -3,6 +3,7 @@
     import iconCancel from "@ktibow/iconset-material-symbols/cancel-sharp";
     import iconOpen from "@ktibow/iconset-material-symbols/open-in-new";
     import iconCopy from "@ktibow/iconset-material-symbols/content-copy-outline";
+    import iconShare from "@ktibow/iconset-material-symbols/share-outline";
     import { Button, Card, FAB, Icon, WavyLinearProgress } from "m3-svelte";
     import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 
@@ -14,8 +15,16 @@
         pageCount = 0,
         copyLink = () => {},
         clearAll = () => {},
-        createArticleAction = () => {}
-    } = $props()
+        createArticleAction = () => {},
+    } = $props();
+
+    function publishToTelegram() {
+        appState.navigateTo("telegram", {
+            historyId: appState.currentHistoryId,
+            articleTitle: appState.chapterTitle,
+            titleId: appState.currentTitleId || 0,
+        });
+    }
 </script>
 
 <footer>
@@ -56,8 +65,21 @@
                         >
                             <Icon icon={iconOpen} />
                         </Button>
-                        <Button variant="tonal" onclick={copyLink} size="m" square>
+                        <Button
+                            variant="tonal"
+                            onclick={copyLink}
+                            size="m"
+                            square
+                        >
                             <Icon icon={iconCopy} />
+                        </Button>
+                        <Button
+                            variant="tonal"
+                            onclick={publishToTelegram}
+                            size="m"
+                            square
+                        >
+                            <Icon icon={iconShare} />
                         </Button>
                     </div>
                 </div>
@@ -67,14 +89,16 @@
                 </Card>
             {/if}
         </div>
-        
+
         <!-- Only for testing visual feedback, added tonal variant if editing -->
         <Button
             size="m"
             square
             onclick={createArticleAction}
-            disabled={isProcessing || !hasImages || (appState.editMode && !appState.isDirty)}
-            variant={appState.editMode ? "filled" : "tonal"}  
+            disabled={isProcessing ||
+                !hasImages ||
+                (appState.editMode && !appState.isDirty)}
+            variant={appState.editMode ? "filled" : "tonal"}
         >
             {appState.editMode ? "Обновить" : "Опубликовать"}
         </Button>

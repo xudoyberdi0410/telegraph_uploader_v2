@@ -18,6 +18,7 @@ import (
 	"github.com/gotd/td/telegram/auth/qrlogin"
 	"github.com/gotd/td/telegram/message"
 	"github.com/gotd/td/telegram/message/html"
+
 	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
 	"go.uber.org/zap"
@@ -450,4 +451,36 @@ func (c *Client) ScheduleMessageByID(ctx context.Context, channelID int64, acces
 	}
 
 	return nil
+}
+
+// TelegramUser represents the logged-in user
+type TelegramUser struct {
+	ID        int64  `json:"id"`
+	Username  string `json:"username"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Photo     []byte `json:"photo"` // Base64 encoded in JSON
+}
+
+// GetMe returns the current authorized user
+func (c *Client) GetMe(ctx context.Context) (*TelegramUser, error) {
+	// Wait for connection
+	if err := c.WaitForConnection(ctx); err != nil {
+		return nil, fmt.Errorf("failed to wait for connection: %w", err)
+	}
+
+	// Get self
+	user, err := c.client.Self(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get self: %w", err)
+	}
+
+	tgUser := &TelegramUser{
+		ID:        user.ID,
+		Username:  user.Username,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
+	}
+
+	return tgUser, nil
 }

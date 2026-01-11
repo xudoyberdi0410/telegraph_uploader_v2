@@ -6,7 +6,9 @@ import {
     GetSettings,
     SaveSettings,
     EditTelegraphPage,
-    GetTelegraphPage
+    GetTelegraphPage,
+    GetTitles,
+    CreateTitle
 } from "../../wailsjs/go/main/App"
 
 
@@ -17,11 +19,23 @@ class AppState {
     statusMsg = $state("")
     finalUrl = $state("")
     currentPage = $state("home") // Moved from App.svelte
+    pageProps = $state({})
+
+    navigateTo(page, props = {}) {
+        this.currentPage = page;
+        this.pageProps = props;
+    }
 
     // Edit Mode State
     editMode = $state(false)
     editArticlePath = $state("")
     editAccessToken = $state("")
+    currentHistoryId = $state(0)
+    currentTitleId = $state(0)
+
+    // Titles State
+    titles = $state([])
+    selectedTitleId = $state(0)
 
     // Change Detection
     savedTitle = $state("")
@@ -35,7 +49,10 @@ class AppState {
     settings = $state({
         resize: false,
         resize_to: 1600,
-        webp_quality: 80
+        webp_quality: 80,
+        last_channel_id: "0",
+        last_channel_hash: "0",
+        last_channel_title: ""
     })
 
     isInitialized = false
@@ -43,6 +60,32 @@ class AppState {
 
     constructor() {
         this.loadSettings()
+        this.loadTitles()
+    }
+
+    async loadTitles() {
+        try {
+            this.titles = await GetTitles() || [];
+        } catch (e) {
+            console.error("Failed to load titles:", e);
+        }
+    }
+
+    async createTitleAction(name, rootFolder) {
+        if (!name) return;
+        try {
+            await CreateTitle(name, rootFolder || "");
+            await this.loadTitles();
+            // Automatically select the new title
+            const newTitle = this.titles.find(t => t.name === name);
+            if (newTitle) {
+                this.selectedTitleId = newTitle.id;
+            }
+            this.statusMsg = "Тайтл создан!";
+        } catch (e) {
+            console.error("Failed to create title:", e);
+            this.statusMsg = "Ошибка создания тайтла: " + e;
+        }
     }
 
     // Helper to snapshot current state
@@ -75,8 +118,45 @@ class AppState {
         }, 500);
     }
 
+    detectTitleFromPath(filePath) {
+        if (!filePath || !this.titles || this.titles.length === 0) return null;
+
+        // Normalize path separators to forward slashes for consistent comparison
+        const normalizedFilePath = filePath.replace(/\\/g, '/').toLowerCase();
+
+        let bestMatch = null;
+        let maxLen = 0;
+
+        for (const title of this.titles) {
+            if (!title.folders) continue;
+            for (const folder of title.folders) {
+                if (!folder.path) continue;
+                const normalizedFolderPath = folder.path.replace(/\\/g, '/').toLowerCase();
+
+                // Check if file path starts with folder path
+                if (normalizedFilePath.startsWith(normalizedFolderPath)) {
+                    if (normalizedFolderPath.length > maxLen) {
+                        maxLen = normalizedFolderPath.length;
+                        bestMatch = title;
+                    }
+                }
+            }
+        }
+        return bestMatch;
+    }
+
     addImagesFromPaths(paths) {
         if (!paths || paths.length === 0) return;
+
+        // Try to detect title if not already selected or if currently "No Title" (0)
+        // We only check the first file for performance and assumption that all files are from same context usually
+        if (this.selectedTitleId === 0 && paths.length > 0) {
+            const detectedTitle = this.detectTitleFromPath(paths[0]);
+            if (detectedTitle) {
+                this.selectedTitleId = detectedTitle.id;
+                console.log(`Auto-detected title: ${detectedTitle.name}`);
+            }
+        }
 
         const newImages = paths
             .map((fullPath) => {
@@ -118,6 +198,8 @@ class AppState {
         this.editMode = false;
         this.editArticlePath = "";
         this.editAccessToken = "";
+        this.currentHistoryId = 0;
+        this.currentTitleId = 0;
 
         this.updateSavedState(); // Reset dirty state
     }
@@ -161,6 +243,8 @@ class AppState {
         try {
             // historyItem must have tgph_token (AccessToken)
             // We need it for editing.
+            this.currentHistoryId = historyItem.id
+            this.currentTitleId = historyItem.title_id || 0
             if (!historyItem.tgph_token && !historyItem.TgphToken) {
                 // Try to fallback or warn?
                 // If token is missing, we might fail to edit if it's not the same as global token.
@@ -273,22 +357,28 @@ class AppState {
 
             } else {
                 this.statusMsg = "Создание статьи в Telegraph...";
-                const telegraphLink = await CreateTelegraphPage(this.chapterTitle, finalImageUrls);
+                // Use selectedTitleId if available
+                const titleIdToUse = this.selectedTitleId ? this.selectedTitleId : 0;
+                const response = await CreateTelegraphPage(this.chapterTitle, finalImageUrls, titleIdToUse);
 
-                if (telegraphLink.startsWith("http")) {
-                    this.finalUrl = telegraphLink;
+                if (response.success) {
+                    this.finalUrl = response.url;
+                    this.currentHistoryId = response.history_id;
                     this.statusMsg = "Готово!";
 
                     // Switch to Edit Mode for this new article
                     this.editMode = true;
                     // Extract path: https://telegra.ph/Some-Title-01-09 -> Some-Title-01-09
-                    const parts = telegraphLink.split('/');
+                    const parts = response.url.split('/');
                     this.editArticlePath = parts[parts.length - 1];
                     this.editAccessToken = ""; // Use internal default
 
+                    // Update current IDs
+                    this.currentTitleId = titleIdToUse;
+
                     this.refreshImagesAfterSave(finalImageUrls);
                 } else {
-                    throw new Error(telegraphLink);
+                    throw new Error(response.error || "Unknown error creating page");
                 }
             }
 

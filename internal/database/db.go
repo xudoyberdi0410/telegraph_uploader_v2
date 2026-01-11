@@ -13,12 +13,13 @@ import (
 )
 
 type Settings struct {
-	ID              uint `gorm:"primaryKey"`
-	Resize          bool
-	ResizeTo        int
-	WebpQuality     int
-	LastChannelID   int64 // Last selected telegram channel ID
-	LastChannelHash int64
+	ID               uint `gorm:"primaryKey"`
+	Resize           bool
+	ResizeTo         int
+	WebpQuality      int
+	LastChannelID    int64
+	LastChannelHash  int64
+	LastChannelTitle string
 }
 
 type Title struct {
@@ -31,7 +32,7 @@ type Title struct {
 type TitleFolder struct {
 	ID      uint   `gorm:"primaryKey" json:"id"`
 	TitleID uint   `json:"title_id"`
-	Path    string `gorm:"index" json:"path"` // Path string to match
+	Path    string `gorm:"index" json:"path"`
 }
 
 type TitleVariable struct {
@@ -44,7 +45,7 @@ type TitleVariable struct {
 type Template struct {
 	ID      uint   `gorm:"primaryKey" json:"id"`
 	Name    string `gorm:"unique" json:"name"`
-	Content string `json:"content"` // HTML/Markdown content
+	Content string `json:"content"`
 }
 
 type dbHistory struct {
@@ -54,7 +55,7 @@ type dbHistory struct {
 	Url       string
 	ImgCount  int
 	TgphToken string
-	TitleID   *uint // Link to Title
+	TitleID   *uint
 }
 
 func (dbHistory) TableName() string {
@@ -159,15 +160,16 @@ func (d *Database) UpdateSettings(s Settings) {
 
 // --- Методы для Истории ---
 
-func (d *Database) AddHistory(title, url string, imgCount int, tgphToken string, titleID *uint) error {
-	err := d.conn.Create(&dbHistory{
+func (d *Database) AddHistory(title, url string, imgCount int, tgphToken string, titleID *uint) (uint, error) {
+	item := dbHistory{
 		Title:     title,
 		Url:       url,
 		ImgCount:  imgCount,
 		TgphToken: tgphToken,
 		TitleID:   titleID,
-	}).Error
-	return err
+	}
+	err := d.conn.Create(&item).Error
+	return item.ID, err
 }
 
 // GetHistory возвращает последние N записей
@@ -219,8 +221,26 @@ func (d *Database) GetHistoryByID(id uint) (HistoryItem, error) {
 
 // --- Методы для Тайтлов ---
 
-func (d *Database) CreateTitle(name string) error {
-	return d.conn.Create(&Title{Name: name}).Error
+func (d *Database) CreateTitle(name string, rootFolder string) error {
+	tx := d.conn.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+
+	title := Title{Name: name}
+	if err := tx.Create(&title).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if rootFolder != "" {
+		if err := tx.Create(&TitleFolder{TitleID: title.ID, Path: rootFolder}).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit().Error
 }
 
 func (d *Database) GetTitles() []Title {
@@ -247,6 +267,15 @@ func (d *Database) GetTitleByID(id uint) (Title, error) {
 	var t Title
 	err := d.conn.Preload("Variables").Preload("Folders").First(&t, id).Error
 	return t, err
+}
+
+func (d *Database) AddTitleVariable(titleID uint, key, value string) error {
+	variable := TitleVariable{
+		TitleID: titleID,
+		Key:     key,
+		Value:   value,
+	}
+	return d.conn.Create(&variable).Error
 }
 
 // SearchTitleByPath tries to find a title that has a folder matching the path

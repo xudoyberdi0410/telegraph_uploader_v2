@@ -17,22 +17,22 @@
     ondragover={onDragOver}
     ondragend={onDragEnd}
 >
-    <div class="card-inner">
+            <div class="card-inner">
         <button
             class="close-btn"
-            onclick={handleRemoveClick}
+                            onclick={handleRemoveClick}
             title="Убрать из списка">×</button
         >
 
         <div class="checkbox-wrapper">
             <input type="checkbox" bind:checked={img.selected} />
-        </div>
+                </div>
 
-        <div class="img-wrapper">
-            <img src={img.thumbnailSrc} alt={img.name} />
-        </div>
+                <div class="img-wrapper">
+                    <img src={img.thumbnailSrc} alt={img.name} />
+                </div>
 
-        <div class="name">{img.name}</div>
+                <div class="name">{img.name}</div>
     </div>
 </div>
 
