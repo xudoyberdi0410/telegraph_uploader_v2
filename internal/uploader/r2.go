@@ -2,7 +2,11 @@ package uploader
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -11,6 +15,7 @@ import (
 	"time"
 
 	"telegraph_uploader_v2/internal/config"
+	"telegraph_uploader_v2/internal/repository"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -26,8 +31,9 @@ type UploadResult struct {
 
 // R2Uploader хранит состояние: готовый клиент и конфиг
 type R2Uploader struct {
-	client *minio.Client
-	cfg    *config.Config
+	client    *minio.Client
+	cfg       *config.Config
+	cacheRepo repository.ImageCacheRepository
 }
 
 type ResizeSettings struct {
@@ -38,7 +44,7 @@ type ResizeSettings struct {
 }
 
 // New создает новый экземпляр загрузчика. Вызывается 1 раз при старте.
-func New(cfg *config.Config) (*R2Uploader, error) {
+func New(cfg *config.Config, cacheRepo repository.ImageCacheRepository) (*R2Uploader, error) {
 	endpoint := fmt.Sprintf("%s.r2.cloudflarestorage.com", cfg.R2AccountId)
 
 	client, err := minio.New(endpoint, &minio.Options{
@@ -50,16 +56,18 @@ func New(cfg *config.Config) (*R2Uploader, error) {
 	}
 
 	return &R2Uploader{
-		client: client,
-		cfg:    cfg,
+		client:    client,
+		cfg:       cfg,
+		cacheRepo: cacheRepo,
 	}, nil
 }
 
 // NewWithClient creates uploader with specific minio client (useful for tests)
-func NewWithClient(client *minio.Client, cfg *config.Config) *R2Uploader {
+func NewWithClient(client *minio.Client, cfg *config.Config, cacheRepo repository.ImageCacheRepository) *R2Uploader {
 	return &R2Uploader{
-		client: client,
-		cfg:    cfg,
+		client:    client,
+		cfg:       cfg,
+		cacheRepo: cacheRepo,
 	}
 }
 
@@ -70,8 +78,8 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 
 	uploadedLinks := make([]string, len(filePaths))
 	var uploadErrors []string
-	var mu sync.Mutex 
-	
+	var mu sync.Mutex
+
 	var processedCount int32
 	totalFiles := len(filePaths)
 
@@ -85,12 +93,11 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 			default:
 			}
 
-			// ШАГ 1: Обработка изображения
 			if resizeSettings.MockR2 {
 				// MOCK MODE: Just wait a bit and return fake link
 				time.Sleep(time.Millisecond * 2000)
 				uploadedLinks[i] = fmt.Sprintf("https://cxc-images.khudoberdi.uz/1767902262155077900_D1000.webp?id=%d", i)
-				
+
 				// Progress update
 				newCount := atomic.AddInt32(&processedCount, 1)
 				if onProgress != nil {
@@ -99,6 +106,32 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 				return nil
 			}
 
+			// --- НОВАЯ ЛОГИКА: ХЭШИРОВАНИЕ ---
+			// 1. Считаем хэш исходного файла
+			fileHash, err := calculateFileHash(path)
+			if err != nil {
+				mu.Lock()
+				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Hash error: %v", filepath.Base(path), err))
+				mu.Unlock()
+				return nil
+			}
+
+			// 2. Проверяем в базе
+			if u.cacheRepo != nil { // Check if repo is available
+				if cachedURL, found := u.cacheRepo.GetURL(fileHash); found {
+					// УРА! Файл уже был загружен.
+					uploadedLinks[i] = cachedURL
+					// Progress update
+					newCount := atomic.AddInt32(&processedCount, 1)
+					if onProgress != nil {
+						onProgress(int(newCount), totalFiles)
+					}
+					return nil
+				}
+			}
+			// ----------------------------------
+
+			// ШАГ 1: Обработка изображения
 			processed, err := processImage(path, resizeSettings)
 			if err != nil {
 				mu.Lock()
@@ -122,6 +155,12 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 			domain := strings.TrimRight(u.cfg.PublicDomain, "/")
 			finalUrl := fmt.Sprintf("%s/%s", domain, processed.FileName)
 
+			// --- НОВАЯ ЛОГИКА: СОХРАНЕНИЕ В КЭШ ---
+			if u.cacheRepo != nil {
+				_ = u.cacheRepo.Save(fileHash, finalUrl)
+			}
+			// --------------------------------------
+
 			// Индексы уникальны, мьютекс не нужен для uploadedLinks
 			uploadedLinks[i] = finalUrl
 
@@ -130,7 +169,7 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 			if onProgress != nil {
 				onProgress(int(newCount), totalFiles)
 			}
-			
+
 			return nil
 		})
 	}
@@ -146,3 +185,19 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 
 	return UploadResult{Success: true, Links: uploadedLinks}
 }
+
+func calculateFileHash(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+

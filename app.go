@@ -69,9 +69,10 @@ func NewApp() *App {
 	historyRepo := repository.NewHistoryRepository(dbInstance)
 	titleRepo := repository.NewTitleRepository(dbInstance)
 	templateRepo := repository.NewTemplateRepository(dbInstance)
+	cacheRepo := repository.NewImageCacheRepository(dbInstance)
 
 	// 3. Init Infrastructure Clients
-	r2Uploader, err := uploader.New(cfg)
+	r2Uploader, err := uploader.New(cfg, cacheRepo)
 	if err != nil {
 		log.Println("[App] Uploader init error:", err)
 	} else {

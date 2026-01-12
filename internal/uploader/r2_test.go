@@ -24,7 +24,7 @@ func TestNew(t *testing.T) {
 		R2SecretKey: "secret",
 	}
 	// minio.New performs some validation on endpoint format
-	u, err := New(cfg)
+	u, err := New(cfg, nil)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestUploadChapter(t *testing.T) {
 		Secure: false,
 	})
 
-	uploader := NewWithClient(minioClient, cfg)
+	uploader := NewWithClient(minioClient, cfg, nil)
 
 	// Create dummy image file
 	tmpDir, err := os.MkdirTemp("", "uploadtest")
@@ -88,7 +88,7 @@ func TestUploadChapter(t *testing.T) {
 	imgPath := createTestImage(t, tmpDir, "upload.png", 100, 100)
 
 	// Valid upload
-	result := uploader.UploadChapter(context.Background(), []string{imgPath}, ResizeSettings{})
+	result := uploader.UploadChapter(context.Background(), []string{imgPath}, ResizeSettings{}, nil)
 	if !result.Success {
 		t.Errorf("expected success, got error: %s", result.Error)
 	}
@@ -100,7 +100,7 @@ func TestUploadChapter(t *testing.T) {
 	}
 
 	// Invalid file upload
-	result = uploader.UploadChapter(context.Background(), []string{"nonexistent.png"}, ResizeSettings{})
+	result = uploader.UploadChapter(context.Background(), []string{"nonexistent.png"}, ResizeSettings{}, nil)
 	if result.Success {
 		t.Error("expected failure for nonexistent file")
 	}
@@ -119,13 +119,13 @@ func TestUploadChapter_UploadError(t *testing.T) {
 		Secure: false,
 	})
 	
-	uploader := NewWithClient(minioClient, &config.Config{BucketName: "b"})
+	uploader := NewWithClient(minioClient, &config.Config{BucketName: "b"}, nil)
 
 	tmpDir, _ := os.MkdirTemp("", "uploadtest_fail")
 	defer os.RemoveAll(tmpDir)
 	imgPath := createTestImage(t, tmpDir, "fail.png", 10, 10)
 
-	result := uploader.UploadChapter(context.Background(), []string{imgPath}, ResizeSettings{})
+	result := uploader.UploadChapter(context.Background(), []string{imgPath}, ResizeSettings{}, nil)
 	if result.Success {
 		t.Error("expected failure when server errors")
 	}
@@ -155,9 +155,9 @@ func TestUploadChapter_PartialFailure(t *testing.T) {
 		Secure: false,
 	})
 	
-	uploader := NewWithClient(minioClient, &config.Config{BucketName: "b", PublicDomain: "http://d"})
+	uploader := NewWithClient(minioClient, &config.Config{BucketName: "b", PublicDomain: "http://d"}, nil)
 
-	result := uploader.UploadChapter(context.Background(), []string{goodPath, badPath}, ResizeSettings{})
+	result := uploader.UploadChapter(context.Background(), []string{goodPath, badPath}, ResizeSettings{}, nil)
 	
 	// Expect failure because at least one failed
 	if result.Success {
@@ -165,7 +165,7 @@ func TestUploadChapter_PartialFailure(t *testing.T) {
 	}
 
 	// Check error message contains info
-	if !strings.Contains(result.Error, "Processing failed") && !strings.Contains(result.Error, "open error") {
+	if !strings.Contains(result.Error, "Processing failed") && !strings.Contains(result.Error, "open error") && !strings.Contains(result.Error, "Hash error") {
 		t.Errorf("expected error details, got %s", result.Error)
 	}
 }

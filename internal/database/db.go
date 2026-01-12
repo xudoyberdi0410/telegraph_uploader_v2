@@ -47,6 +47,12 @@ type Template struct {
 	Content string `json:"content"`
 }
 
+type UploadedFile struct {
+	Hash      string    `gorm:"primaryKey" json:"hash"` // Unique hash (SHA-256)
+	URL       string    `json:"url"`                    // URL in R2
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // HistoryEntry maps to database table "history_items"
 type HistoryEntry struct {
 	ID        uint `gorm:"primaryKey"`
@@ -105,7 +111,7 @@ func InitWithFile(dbPath string) (*gorm.DB, error) {
 	}
 
 	// Автоматическая миграция
-	err = db.AutoMigrate(&Settings{}, &HistoryEntry{}, &Title{}, &TitleFolder{}, &TitleVariable{}, &Template{})
+	err = db.AutoMigrate(&Settings{}, &HistoryEntry{}, &Title{}, &TitleFolder{}, &TitleVariable{}, &Template{}, &UploadedFile{})
 	if err != nil {
 		return nil, err
 	}
