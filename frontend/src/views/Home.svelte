@@ -20,7 +20,7 @@
     }
 
     $effect(() => {
-        if (editorStore.statusMsg) {
+        if (editorStore.statusMsg && !editorStore.isProcessing) {
             snackbar(editorStore.statusMsg);
         }
     });

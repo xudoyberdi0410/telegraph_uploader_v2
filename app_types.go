@@ -27,6 +27,7 @@ type FrontendSettings struct {
 	Resize           bool   `json:"resize"`
 	ResizeTo         int    `json:"resize_to"`
 	WebpQuality      int    `json:"webp_quality"`
+	MockR2           bool   `json:"mock_r2"`
 	LastChannelID    string `json:"last_channel_id"`
 	LastChannelHash  string `json:"last_channel_hash"`
 	LastChannelTitle string `json:"last_channel_title"`

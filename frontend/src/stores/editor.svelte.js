@@ -6,6 +6,7 @@ import {
     EditTelegraphPage,
     GetTelegraphPage
 } from "../../wailsjs/go/main/App";
+import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime";
 
 import { settingsStore } from "./settings.svelte.js";
 import { titlesStore } from "./titles.svelte.js";
@@ -15,6 +16,7 @@ class EditorStore {
     images = $state([]);
     chapterTitle = $state("");
     isProcessing = $state(false);
+    uploadProgress = $state(0);
     statusMsg = $state("");
     finalUrl = $state("");
 
@@ -213,7 +215,24 @@ class EditorStore {
             let newLinks = [];
             if (localFiles.length > 0) {
                 this.statusMsg = `Загрузка ${localFiles.length} новых изображений...`;
-                const uploadRes = await UploadChapter(localFiles, settingsSnapshot);
+                this.uploadProgress = 0;
+                
+                // Subscribe to progress events
+                EventsOn("upload_progress", (data) => {
+                    if (data && data.total > 0) {
+                        this.uploadProgress = data.percentage;
+                        this.statusMsg = `Загрузка: ${data.percentage}% (${data.current}/${data.total})`;
+                    }
+                });
+
+                let uploadRes;
+                try {
+                    uploadRes = await UploadChapter(localFiles, settingsSnapshot);
+                } finally {
+                    EventsOff("upload_progress");
+                    this.uploadProgress = 0;
+                }
+
                 if (!uploadRes.success) throw new Error(uploadRes.error);
                 newLinks = uploadRes.links;
             }

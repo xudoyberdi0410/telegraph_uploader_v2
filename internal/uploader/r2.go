@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"telegraph_uploader_v2/internal/config"
 
@@ -32,6 +34,7 @@ type ResizeSettings struct {
 	Resize      bool `json:"resize"`
 	ResizeTo    int  `json:"resize_to"`
 	WebpQuality int  `json:"webp_quality"`
+	MockR2      bool `json:"mock_r2"`
 }
 
 // New создает новый экземпляр загрузчика. Вызывается 1 раз при старте.
@@ -61,20 +64,21 @@ func NewWithClient(client *minio.Client, cfg *config.Config) *R2Uploader {
 }
 
 // UploadChapter теперь использует errgroup для параллельной загрузки
-func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resizeSettings ResizeSettings) UploadResult {
+func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resizeSettings ResizeSettings, onProgress func(int, int)) UploadResult {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(runtime.NumCPU())
 
 	uploadedLinks := make([]string, len(filePaths))
 	var uploadErrors []string
-	var mu sync.Mutex // Mutex для защиты записи ошибок и ссылок (хотя ссылки по индексу можно писать и без него, но для безопасности оставим, или уберем, т.к. индексы разные)
-	// Ссылки по уникальным индексам можно писать без мьютекса.
-	// Ошибки - нужен мьютекс.
+	var mu sync.Mutex 
+	
+	var processedCount int32
+	totalFiles := len(filePaths)
 
 	for i, path := range filePaths {
 		i, path := i, path // Capture vars
 		g.Go(func() error {
-			// Проверяем контекст (хотя minio.PutObject тоже его проверяет)
+			// Проверяем контекст
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -82,14 +86,24 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 			}
 
 			// ШАГ 1: Обработка изображения
+			if resizeSettings.MockR2 {
+				// MOCK MODE: Just wait a bit and return fake link
+				time.Sleep(time.Millisecond * 2000)
+				uploadedLinks[i] = fmt.Sprintf("https://cxc-images.khudoberdi.uz/1767902262155077900_D1000.webp?id=%d", i)
+				
+				// Progress update
+				newCount := atomic.AddInt32(&processedCount, 1)
+				if onProgress != nil {
+					onProgress(int(newCount), totalFiles)
+				}
+				return nil
+			}
+
 			processed, err := processImage(path, resizeSettings)
 			if err != nil {
 				mu.Lock()
 				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Processing failed: %v", filepath.Base(path), err))
 				mu.Unlock()
-				// Если хотим остановить всё при первой ошибке - return err.
-				// Если хотим попробовать загрузить остальные - return nil (но логируем ошибку).
-				// Текущая логика была: собирать ошибки. Оставим её, чтобы не прерывать весь батч из-за одной битой картинки.
 				return nil
 			}
 
@@ -110,12 +124,18 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 
 			// Индексы уникальны, мьютекс не нужен для uploadedLinks
 			uploadedLinks[i] = finalUrl
+
+			// Progress update
+			newCount := atomic.AddInt32(&processedCount, 1)
+			if onProgress != nil {
+				onProgress(int(newCount), totalFiles)
+			}
+			
 			return nil
 		})
 	}
 
 	// Ждем завершения всех горутин
-	// Так как мы возвращаем nil из горутин (кроме ctx error), Wait вернет ошибку только если контекст отменили.
 	if err := g.Wait(); err != nil {
 		return UploadResult{Success: false, Error: "Upload cancelled or failed: " + err.Error()}
 	}

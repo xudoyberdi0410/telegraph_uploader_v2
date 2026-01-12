@@ -4,11 +4,13 @@
     import iconOpen from "@ktibow/iconset-material-symbols/open-in-new";
     import iconCopy from "@ktibow/iconset-material-symbols/content-copy-outline";
     import iconShare from "@ktibow/iconset-material-symbols/share-outline";
-    import { Button, Card, FAB, Icon, WavyLinearProgress } from "m3-svelte";
+    import { Button, Card, FAB, Icon } from "m3-svelte";
     import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 
     import { editorStore } from "../stores/editor.svelte";
     import { navigationStore } from "../stores/navigation.svelte";
+
+    import WavyLinearProgressAnimated from "../ui/WavyLinearProgressAnimated.svelte";
 
     let {
         isProcessing = false,
@@ -32,7 +34,7 @@
     {#if isProcessing}
         <div class="card-wrapper">
             <Card variant="filled">
-                <WavyLinearProgress percent={100} />
+                <WavyLinearProgressAnimated percent={editorStore.uploadProgress > 0 ? editorStore.uploadProgress : 0} />
             </Card>
         </div>
         <Button size="m" square disabled>
@@ -128,12 +130,6 @@
         align-items: center;
         gap: 8px;
         flex-wrap: wrap;
-    }
-    .link-info {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        overflow: hidden;
     }
     .actions {
         display: flex;

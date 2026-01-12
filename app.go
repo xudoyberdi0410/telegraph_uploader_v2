@@ -128,8 +128,17 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) UploadChapter(filePaths []string, resizeSettings uploader.ResizeSettings) uploader.UploadResult {
 	log.Printf("[App] UploadChapter called. Files: %d, Settings: %+v", len(filePaths), resizeSettings)
 	
+	onProgress := func(current, total int) {
+		percentage := int(float64(current) / float64(total) * 100)
+		wailsRuntime.EventsEmit(a.ctx, "upload_progress", map[string]int{
+			"current":    current,
+			"total":      total,
+			"percentage": percentage,
+		})
+	}
+
 	// Делегируем сервису
-	result := a.mangaService.UploadChapter(a.ctx, filePaths, resizeSettings)
+	result := a.mangaService.UploadChapter(a.ctx, filePaths, resizeSettings, onProgress)
 
 	if result.Success {
 		log.Printf("[App] UploadChapter finished successfully. URLs generated: %d", len(result.Links))

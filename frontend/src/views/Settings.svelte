@@ -30,6 +30,13 @@
         <div class="text">Уровень сжатия</div>
         <Slider bind:value={settingsStore.settings.webp_quality} />
     </Card>
+
+    <Card variant="filled">
+        <label class="card-wrapper switch-settings">
+            <div class="text">Имитация загрузки (R2)</div>
+            <Switch bind:checked={settingsStore.settings.mock_r2} />
+        </label>
+    </Card>
 </div>
 
 <style>

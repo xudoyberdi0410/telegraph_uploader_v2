@@ -13,11 +13,11 @@ func NewMangaService(upl *uploader.R2Uploader) *MangaService {
 	return &MangaService{uploader: upl}
 }
 
-func (s *MangaService) UploadChapter(ctx context.Context, filePaths []string, settings uploader.ResizeSettings) uploader.UploadResult {
+func (s *MangaService) UploadChapter(ctx context.Context, filePaths []string, settings uploader.ResizeSettings, onProgress func(int, int)) uploader.UploadResult {
 	if s.uploader == nil {
 		return uploader.UploadResult{Success: false, Error: "Загрузчик не инициализирован"}
 	}
 	
 	// Вызов R2
-	return s.uploader.UploadChapter(ctx, filePaths, settings)
+	return s.uploader.UploadChapter(ctx, filePaths, settings, onProgress)
 }

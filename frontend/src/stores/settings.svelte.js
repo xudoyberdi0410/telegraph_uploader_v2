@@ -5,6 +5,7 @@ class SettingsStore {
         resize: false,
         resize_to: 1600,
         webp_quality: 80,
+        mock_r2: false,
         last_channel_id: "0",
         last_channel_hash: "0",
         last_channel_title: ""
