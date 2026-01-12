@@ -43,6 +43,7 @@ type App struct {
 	dialogs      DialogProvider
 
 	authPasswordChan chan string
+	authHandler      *WailsAuthHandler
 }
 
 func NewApp() *App {
@@ -91,6 +92,8 @@ func NewApp() *App {
 	mangaService := service.NewMangaService(r2Uploader)
 	pubService := service.NewPublicationService(tgClient, tgApp, historyRepo, titleRepo)
 
+	pwdChan := make(chan string)
+
 	return &App{
 		config:           cfg,
 		mangaService:     mangaService,
@@ -101,12 +104,18 @@ func NewApp() *App {
 		templateRepo:     templateRepo,
 		telegram:         tgApp,
 		dialogs:          &WailsDialogProvider{},
-		authPasswordChan: make(chan string),
+		authPasswordChan: pwdChan,
+		authHandler:      &WailsAuthHandler{passwordChan: pwdChan},
 	}
 }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.authHandler.SetContext(ctx)
+	// Wire the channels: App writes to its channel, AuthHandler reads from it
+	// Actually, let's share the channel instance or link them.
+	// In NewApp I created a new channel for authHandler, but App uses authPasswordChan.
+	// Let's fix NewApp to share the same channel.
 	log.Println("[App] Application startup complete")
 
 	if a.telegram != nil {
@@ -348,7 +357,7 @@ func (a *App) TelegramLoginQR() string {
 			wailsRuntime.EventsEmit(a.ctx, "tg_qr_code", base64Image)
 		}
 
-		err := a.telegram.LoginQR(a.ctx, displayQR, a)
+		err := a.telegram.LoginQR(a.ctx, displayQR, a.authHandler)
 		if err != nil {
 			log.Printf("[App] QR Login failed: %v", err)
 			wailsRuntime.EventsEmit(a.ctx, "tg_auth_error", err.Error())
@@ -370,12 +379,27 @@ func (a *App) TelegramSubmitPassword(password string) {
 	a.authPasswordChan <- password
 }
 
-func (a *App) GetPassword(ctx context.Context) (string, error) {
-	log.Println("[App] Requesting password from user via UI event...")
-	wailsRuntime.EventsEmit(a.ctx, "tg_request_password", nil)
+// WailsAuthHandler handles authentication flow interactions via Wails
+type WailsAuthHandler struct {
+	ctx          context.Context
+	passwordChan <-chan string
+}
+
+func (h *WailsAuthHandler) SetContext(ctx context.Context) {
+	h.ctx = ctx
+}
+
+func (h *WailsAuthHandler) GetPassword(ctx context.Context) (string, error) {
+	log.Println("[WailsAuthHandler] Requesting password from user via UI event...")
+	
+	if h.ctx == nil {
+		return "", fmt.Errorf("context not set for auth handler")
+	}
+
+	wailsRuntime.EventsEmit(h.ctx, "tg_request_password", nil)
 
 	select {
-	case pwd := <-a.authPasswordChan:
+	case pwd := <-h.passwordChan:
 		return pwd, nil
 	case <-ctx.Done():
 		return "", ctx.Err()

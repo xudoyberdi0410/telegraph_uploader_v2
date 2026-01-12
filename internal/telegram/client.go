@@ -35,6 +35,7 @@ type Client struct {
 	dispatcher  tg.UpdateDispatcher
 	ready       chan struct{}
 	isConnected atomic.Bool
+	connNotify  chan struct{}
 }
 
 func New(cfg *config.Config) (*Client, error) {
@@ -70,6 +71,7 @@ func New(cfg *config.Config) (*Client, error) {
 		appID:      cfg.TelegramAppId,
 		ready:      make(chan struct{}),
 		dispatcher: dispatcher,
+		connNotify: make(chan struct{}),
 	}, nil
 }
 
@@ -81,6 +83,7 @@ func NewWithClient(client *telegram.Client, cfg *config.Config) *Client {
 		appID:      cfg.TelegramAppId,
 		ready:      make(chan struct{}),
 		dispatcher: tg.NewUpdateDispatcher(),
+		connNotify: make(chan struct{}),
 	}
 }
 
@@ -111,7 +114,21 @@ func (c *Client) Start(ctx context.Context) {
 					// This callback is called ONCE when connected
 					log.Println("[Telegram] Connected!")
 					c.isConnected.Store(true)
-					defer c.isConnected.Store(false)
+
+					c.mu.Lock()
+					select {
+					case <-c.connNotify:
+					default:
+						close(c.connNotify)
+					}
+					c.mu.Unlock()
+
+					defer func() {
+						c.isConnected.Store(false)
+						c.mu.Lock()
+						c.connNotify = make(chan struct{})
+						c.mu.Unlock()
+					}()
 
 					// Initialize sender
 					c.sender = message.NewSender(tg.NewClient(c.client))
@@ -242,22 +259,19 @@ func (c *Client) WaitForConnection(ctx context.Context) error {
 	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
+	c.mu.Lock()
+	notify := c.connNotify
+	c.mu.Unlock()
 
-	for {
-		select {
-		case <-waitCtx.Done():
-			if waitCtx.Err() == context.DeadlineExceeded {
-				return fmt.Errorf("connection timed out after 30s")
-			}
-			return waitCtx.Err()
-		case <-ticker.C:
-			if c.isConnected.Load() {
-				log.Println("[Telegram] Connection established, proceeding...")
-				return nil
-			}
+	select {
+	case <-waitCtx.Done():
+		if waitCtx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("connection timed out after 30s")
 		}
+		return waitCtx.Err()
+	case <-notify:
+		log.Println("[Telegram] Connection established, proceeding...")
+		return nil
 	}
 }
 
