@@ -14,6 +14,8 @@ import (
 
 	"telegraph_uploader_v2/internal/config"
 	"telegraph_uploader_v2/internal/database"
+	"telegraph_uploader_v2/internal/repository"
+	"telegraph_uploader_v2/internal/service"
 	"telegraph_uploader_v2/internal/telegram"
 	"telegraph_uploader_v2/internal/telegraph"
 	"telegraph_uploader_v2/internal/uploader"
@@ -21,18 +23,26 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-
-
 type App struct {
-	ctx        context.Context
-	config     *config.Config
-	uploader   *uploader.R2Uploader
-	tgphClient *telegraph.Client
-	telegram   *telegram.Client
-	db         *database.Database
-	dialogs    DialogProvider
+	ctx          context.Context
+	config       *config.Config
+	
+	// Services
+	mangaService *service.MangaService
+	pubService   *service.PublicationService
+	
+	// Repositories (Direct access for simple CRUD)
+	settingsRepo repository.SettingsRepository
+	historyRepo  repository.HistoryRepository
+	titleRepo    repository.TitleRepository
+	templateRepo repository.TemplateRepository
+	
+	// Infrastructure (Direct access where Service isn't needed/created yet)
+	telegram     *telegram.Client
+	
+	dialogs      DialogProvider
 
-	authPasswordChan chan string // Added channel for password
+	authPasswordChan chan string
 }
 
 func NewApp() *App {
@@ -40,28 +50,34 @@ func NewApp() *App {
 
 	cfg, err := config.Load()
 	if err != nil {
-		// Если конфига нет, можно упасть или создать пустой.
-		// Для GUI приложений лучше логировать, но не падать сразу.
 		log.Println("[App] Warning: could not load config:", err)
-		cfg = &config.Config{} // Пустой конфиг, чтобы не было nil pointer
+		cfg = &config.Config{}
 	} else {
 		log.Println("[App] Config loaded successfully")
 	}
 
-	dbService, err := database.Init()
+	// 1. Init Database
+	dbInstance, err := database.Init()
 	if err != nil {
 		log.Fatal("[App] Database init error:", err)
 	}
 	log.Println("[App] Database initialized")
 
-	upl, err := uploader.New(cfg)
+	// 2. Init Repositories
+	settingsRepo := repository.NewSettingsRepository(dbInstance)
+	historyRepo := repository.NewHistoryRepository(dbInstance)
+	titleRepo := repository.NewTitleRepository(dbInstance)
+	templateRepo := repository.NewTemplateRepository(dbInstance)
+
+	// 3. Init Infrastructure Clients
+	r2Uploader, err := uploader.New(cfg)
 	if err != nil {
 		log.Println("[App] Uploader init error:", err)
 	} else {
 		log.Println("[App] Uploader initialized")
 	}
 
-	tg := telegraph.New(cfg)
+	tgClient := telegraph.New(cfg)
 	log.Println("[App] Telegraph client initialized")
 
 	tgApp, err := telegram.New(cfg)
@@ -71,14 +87,21 @@ func NewApp() *App {
 		log.Println("[App] Telegram client initialized")
 	}
 
+	// 4. Init Services
+	mangaService := service.NewMangaService(r2Uploader)
+	pubService := service.NewPublicationService(tgClient, tgApp, historyRepo, titleRepo)
+
 	return &App{
 		config:           cfg,
-		uploader:         upl,
-		tgphClient:       tg,
-		db:               dbService,
-		dialogs:          &WailsDialogProvider{},
+		mangaService:     mangaService,
+		pubService:       pubService,
+		settingsRepo:     settingsRepo,
+		historyRepo:      historyRepo,
+		titleRepo:        titleRepo,
+		templateRepo:     templateRepo,
 		telegram:         tgApp,
-		authPasswordChan: make(chan string), // Initialize channel
+		dialogs:          &WailsDialogProvider{},
+		authPasswordChan: make(chan string),
 	}
 }
 
@@ -91,21 +114,13 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
-
-
 // === МЕТОДЫ ===
 
 func (a *App) UploadChapter(filePaths []string, resizeSettings uploader.ResizeSettings) uploader.UploadResult {
 	log.Printf("[App] UploadChapter called. Files: %d, Settings: %+v", len(filePaths), resizeSettings)
-
-	if a.uploader == nil {
-		errMsg := "Загрузчик не инициализирован (проверьте config.json)"
-		log.Println("[App] Error: " + errMsg)
-		return uploader.UploadResult{Success: false, Error: errMsg}
-	}
-
-	// Просто вызываем метод нашего сервиса
-	result := a.uploader.UploadChapter(a.ctx, filePaths, resizeSettings)
+	
+	// Делегируем сервису
+	result := a.mangaService.UploadChapter(a.ctx, filePaths, resizeSettings)
 
 	if result.Success {
 		log.Printf("[App] UploadChapter finished successfully. URLs generated: %d", len(result.Links))
@@ -119,45 +134,28 @@ func (a *App) UploadChapter(filePaths []string, resizeSettings uploader.ResizeSe
 func (a *App) CreateTelegraphPage(title string, imageUrls []string, titleID int) CreatePageResponse {
 	log.Printf("[App] CreateTelegraphPage called. Title: '%s', Images: %d, TitleID: %d", title, len(imageUrls), titleID)
 
-	url := a.tgphClient.CreatePage(title, imageUrls)
-
-	if len(url) > 4 && url[:4] == "http" {
-		log.Printf("[App] Page created successfully: %s", url)
-		var tID *uint
-		if titleID > 0 {
-			u := uint(titleID)
-			tID = &u
-		}
-		id, err := a.db.AddHistory(title, url, len(imageUrls), a.config.TelegraphToken, tID)
-		if err != nil {
-			log.Printf("[App] Warning: Failed to save to history: %v", err)
-			return CreatePageResponse{
-				Success:   true,
-				Url:       url,
-				HistoryID: 0,
-				Error:     "Saved to Telegraph but failed to save history: " + err.Error(),
-			}
-		} else {
-			log.Println("[App] Saved to history")
-			return CreatePageResponse{
-				Success:   true,
-				Url:       url,
-				HistoryID: id,
-			}
-		}
-	} else {
-		log.Printf("[App] Failed to create page. Result URL/Error: %s", url)
+	res, err := a.pubService.CreatePage(title, imageUrls, titleID)
+	
+	if err != nil {
+		log.Printf("[App] Failed to create page: %v", err)
 		return CreatePageResponse{
-			Success: false,
-			Error:   url,
+			Success:   false,
+			Error:     err.Error(),
 		}
+	}
+
+	log.Printf("[App] Page created successfully: %s", res.URL)
+	return CreatePageResponse{
+		Success:   true,
+		Url:       res.URL,
+		HistoryID: res.HistoryID,
 	}
 }
 
 func (a *App) EditTelegraphPage(path string, title string, imageUrls []string, token string) string {
 	log.Printf("[App] EditTelegraphPage called. Path: '%s', Title: '%s', Images: %d", path, title, len(imageUrls))
 
-	url := a.tgphClient.EditPage(path, title, imageUrls, token)
+	url := a.pubService.EditPage(path, title, imageUrls, token)
 
 	if len(url) > 4 && url[:4] == "http" {
 		log.Printf("[App] Page edited successfully: %s", url)
@@ -171,12 +169,7 @@ func (a *App) EditTelegraphPage(path string, title string, imageUrls []string, t
 func (a *App) GetTelegraphPage(pageUrl string) (ChapterResponse, error) {
 	log.Printf("[App] GetTelegraphPage called. URL: %s", pageUrl)
 
-	// Извлекаем slug из URL
-	parts := strings.Split(pageUrl, "/")
-	// Split always returns at least one element
-	path := parts[len(parts)-1]
-
-	title, images, err := a.tgphClient.GetPage(path)
+	title, images, err := a.pubService.GetPage(pageUrl)
 	if err != nil {
 		log.Printf("[App] Error getting page: %v", err)
 		return ChapterResponse{}, err
@@ -205,7 +198,7 @@ func (a *App) OpenFolderDialog() (ChapterResponse, error) {
 	}
 	if selection == "" {
 		log.Println("[App] OpenFolderDialog canceled by user")
-		return ChapterResponse{}, nil // Или вернуть ошибку, если фронтенд ждет
+		return ChapterResponse{}, nil
 	}
 
 	log.Printf("[App] Folder selected: %s", selection)
@@ -220,7 +213,8 @@ func (a *App) OpenFolderDialog() (ChapterResponse, error) {
 	log.Printf("[App] Found %d images in folder '%s'", len(images), title)
 
 	var detectedID *uint
-	dbTitle, err := a.db.FindTitleByPath(selection)
+	// Используем репозиторий вместо прямого вызова БД
+	dbTitle, err := a.titleRepo.FindByPath(selection)
 	if err == nil {
 		detectedID = &dbTitle.ID
 		log.Printf("[App] Detected title: %s (ID: %d)", dbTitle.Name, dbTitle.ID)
@@ -264,7 +258,6 @@ func (a *App) OpenFilesDialog() ([]string, error) {
 }
 
 func getImagesInDir(dirPath string) ([]string, error) {
-	// log.Printf("[App] Scanning directory: %s", dirPath) // Можно раскомментировать для отладки
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
@@ -284,12 +277,15 @@ func getImagesInDir(dirPath string) ([]string, error) {
 	return images, nil
 }
 
-
-
 // GetSettings вызывается фронтендом при старте
 func (a *App) GetSettings() FrontendSettings {
 	log.Println("[App] GetSettings called")
-	s := a.db.GetSettings()
+	s, err := a.settingsRepo.Get()
+	if err != nil {
+		log.Printf("[App] Error getting settings: %v", err)
+		return FrontendSettings{} // Or default
+	}
+	
 	log.Printf("[App] Returning settings: %+v", s)
 
 	return FrontendSettings{
@@ -306,11 +302,10 @@ func (a *App) GetSettings() FrontendSettings {
 func (a *App) SaveSettings(s FrontendSettings) {
 	log.Printf("[App] SaveSettings called: %+v", s)
 
-	// Parse IDs
 	cID, _ := strconv.ParseInt(s.LastChannelID, 10, 64)
 	cHash, _ := strconv.ParseInt(s.LastChannelHash, 10, 64)
 
-	a.db.UpdateSettings(database.Settings{
+	err := a.settingsRepo.Update(database.Settings{
 		Resize:           s.Resize,
 		ResizeTo:         s.ResizeTo,
 		WebpQuality:      s.WebpQuality,
@@ -318,19 +313,28 @@ func (a *App) SaveSettings(s FrontendSettings) {
 		LastChannelHash:  cHash,
 		LastChannelTitle: s.LastChannelTitle,
 	})
-	log.Println("[App] Settings saved")
+	
+	if err != nil {
+		log.Printf("[App] Error saving settings: %v", err)
+	} else {
+		log.Println("[App] Settings saved")
+	}
 }
 
 func (a *App) GetHistory(limit int, offset int) []database.HistoryItem {
 	log.Printf("[App] GetHistory called (limit: %d, offset: %d)", limit, offset)
-	items := a.db.GetHistory(limit, offset)
+	items, err := a.historyRepo.Get(limit, offset)
+	if err != nil {
+		log.Printf("[App] Error getting history: %v", err)
+		return []database.HistoryItem{}
+	}
 	log.Printf("[App] Returned %d history items", len(items))
 	return items
 }
 
 func (a *App) ClearHistory() {
 	log.Println("[App] ClearHistory called")
-	a.db.ClearHistory()
+	a.historyRepo.Clear()
 	log.Println("[App] History cleared")
 }
 
@@ -338,15 +342,12 @@ func (a *App) TelegramLoginQR() string {
 	log.Println("[App] Starting Telegram QR login...")
 
 	go func() {
-		// Callback to send QR code image to frontend
 		displayQR := func(qrImage []byte) {
-			// Convert to base64
 			base64Image := base64.StdEncoding.EncodeToString(qrImage)
 			log.Printf("[App] Emitting QR code, size: %d bytes", len(qrImage))
 			wailsRuntime.EventsEmit(a.ctx, "tg_qr_code", base64Image)
 		}
 
-		// Pass 'a' as the AuthFlowHandler
 		err := a.telegram.LoginQR(a.ctx, displayQR, a)
 		if err != nil {
 			log.Printf("[App] QR Login failed: %v", err)
@@ -361,22 +362,18 @@ func (a *App) TelegramLoginQR() string {
 }
 
 func (a *App) AddTitleVariable(titleID uint, key string, value string) error {
-	return a.db.AddTitleVariable(titleID, key, value)
+	return a.titleRepo.AddVariable(titleID, key, value)
 }
 
-// TelegramSubmitPassword вызывается из UI, когда пользователь ввел пароль (2FA)
 func (a *App) TelegramSubmitPassword(password string) {
-	log.Printf("[App] User submitted password") // Don't log the actual password
+	log.Printf("[App] User submitted password")
 	a.authPasswordChan <- password
 }
 
-// GetPassword is called by the Telegram Client (if 2FA is enabled)
 func (a *App) GetPassword(ctx context.Context) (string, error) {
-	// 1. Сообщаем UI, что нам нужен пароль
 	log.Println("[App] Requesting password from user via UI event...")
 	wailsRuntime.EventsEmit(a.ctx, "tg_request_password", nil)
 
-	// 2. Ждем ответа из канала
 	select {
 	case pwd := <-a.authPasswordChan:
 		return pwd, nil
@@ -388,41 +385,43 @@ func (a *App) GetPassword(ctx context.Context) (string, error) {
 // --- Title Management ---
 
 func (a *App) GetTitles() []database.Title {
-	return a.db.GetTitles()
+	t, _ := a.titleRepo.GetAll()
+	return t
 }
 
 func (a *App) CreateTitle(name string, rootFolder string) error {
-	return a.db.CreateTitle(name, rootFolder)
+	return a.titleRepo.Create(name, rootFolder)
 }
 
 func (a *App) UpdateTitle(t database.Title) error {
-	return a.db.UpdateTitle(t)
+	return a.titleRepo.Update(t)
 }
 
 func (a *App) DeleteTitle(id uint) error {
-	return a.db.DeleteTitle(id)
+	return a.titleRepo.Delete(id)
 }
 
 func (a *App) GetTitleByID(id uint) (database.Title, error) {
-	return a.db.GetTitleByID(id)
+	return a.titleRepo.GetByID(id)
 }
 
 // --- Template Management ---
 
 func (a *App) GetTemplates() []database.Template {
-	return a.db.GetTemplates()
+	t, _ := a.templateRepo.GetAll()
+	return t
 }
 
 func (a *App) CreateTemplate(name, content string) error {
-	return a.db.CreateTemplate(name, content)
+	return a.templateRepo.Create(name, content)
 }
 
 func (a *App) UpdateTemplate(t database.Template) error {
-	return a.db.UpdateTemplate(t)
+	return a.templateRepo.Update(t)
 }
 
 func (a *App) DeleteTemplate(id uint) error {
-	return a.db.DeleteTemplate(id)
+	return a.templateRepo.Delete(id)
 }
 
 // --- Telegram Feature ---
@@ -448,7 +447,7 @@ func (a *App) SearchChannels(query string) ([]TelegramChannel, error) {
 }
 
 func (a *App) PublishPost(historyID uint, channelIDStr string, accessHashStr string, content string, dateStr string) error {
-	log.Printf("[App] PublishPost called. History: %d, Channel: %s, Content-Len: %d, Date: %s", historyID, channelIDStr, len(content), dateStr)
+	log.Printf("[App] PublishPost called. History: %d, Channel: %s", historyID, channelIDStr)
 
 	// Parse IDs
 	channelID, err := strconv.ParseInt(channelIDStr, 10, 64)
@@ -460,46 +459,15 @@ func (a *App) PublishPost(historyID uint, channelIDStr string, accessHashStr str
 		return fmt.Errorf("invalid access hash: %v", err)
 	}
 
-	// 1. Get History Item
-	item, err := a.db.GetHistoryByID(historyID)
-	if err != nil {
-		return err
-	}
-
-	// 2. Prepare Content (content is now passed directly)
-	content = strings.ReplaceAll(content, "{{Title}}", item.Title)
-	content = strings.ReplaceAll(content, "{{Link}}", item.Url)
-
-	// Custom Variables
-	if item.TitleID != nil && *item.TitleID > 0 {
-		title, err := a.db.GetTitleByID(*item.TitleID)
-		if err == nil {
-			for _, v := range title.Variables {
-				if v.Key != "" {
-					content = strings.ReplaceAll(content, "{{"+v.Key+"}}", v.Value)
-				}
-			}
-		}
-	}
-
-	// 3. Parse Date (Assume RFC3339/ISO8601 from JS)
-	// JS: 2024-01-11T12:00:00.000Z
+	// Parse Date
 	scheduledTime, err := time.Parse(time.RFC3339, dateStr)
 	if err != nil {
-		// Try without milliseconds if helpful, or just return error
 		log.Printf("[App] Date parse error: %v", err)
 		return err
 	}
 
-	// 4. Schedule
-	err = a.telegram.ScheduleMessageByID(a.ctx, channelID, accessHash, content, scheduledTime)
-	if err != nil {
-		log.Printf("[App] Schedule error: %v", err)
-		return err
-	}
-
-	log.Println("[App] Post scheduled successfully")
-	return nil
+	// Delegate to Service
+	return a.pubService.PublishPost(a.ctx, historyID, channelID, accessHash, content, scheduledTime)
 }
 
 func (a *App) IsTelegramLoggedIn() bool {

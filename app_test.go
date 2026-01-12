@@ -15,6 +15,9 @@ import (
 
 	"telegraph_uploader_v2/internal/config"
 	"telegraph_uploader_v2/internal/database"
+	"telegraph_uploader_v2/internal/repository"
+	"telegraph_uploader_v2/internal/service"
+	"telegraph_uploader_v2/internal/telegram"
 	"telegraph_uploader_v2/internal/telegraph"
 	"telegraph_uploader_v2/internal/uploader"
 
@@ -40,14 +43,17 @@ func (m *MockDialogProvider) OpenMultipleFiles(ctx context.Context, options wail
 	return m.FileSelection, m.Err
 }
 
-func setupTestDB(t *testing.T) *database.Database {
+func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	// Use New to initialize DB and migrate
-	d := database.New(db)
+	// Migrate
+	err = db.AutoMigrate(&database.Settings{}, &database.HistoryEntry{}, &database.Title{}, &database.TitleFolder{}, &database.TitleVariable{}, &database.Template{})
+	if err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
 
 	// Create default settings if not exists
 	var count int64
@@ -60,7 +66,7 @@ func setupTestDB(t *testing.T) *database.Database {
 		})
 	}
 
-	return d
+	return db
 }
 
 func setupTestApp(t *testing.T) (*App, *httptest.Server, *httptest.Server) {
@@ -104,6 +110,14 @@ func setupTestApp(t *testing.T) (*App, *httptest.Server, *httptest.Server) {
 	}
 
 	db := setupTestDB(t)
+	
+	// Repos
+	settingsRepo := repository.NewSettingsRepository(db)
+	historyRepo := repository.NewHistoryRepository(db)
+	titleRepo := repository.NewTitleRepository(db)
+	templateRepo := repository.NewTemplateRepository(db)
+
+	// Clients
 	tgClient := telegraph.New(cfg)
 	tgClient.BaseURL = tsTelegraph.URL
 
@@ -112,14 +126,47 @@ func setupTestApp(t *testing.T) (*App, *httptest.Server, *httptest.Server) {
 		Secure: false,
 	})
 	upl := uploader.NewWithClient(minioClient, cfg)
+	
+	// Services
+	mangaService := service.NewMangaService(upl)
+	
+	// Mock Telegram Client (nil for now as it's hard to mock without interface, but we can pass nil if methods check it)
+	// Or create a real one if needed. PublishPost needs it.
+	// For now we pass nil to PublicationService and hope tests that need it are skipped or mocked differently.
+	// But PublishPost uses it.
+	// The original tests didn't test PublishPost with real telegram client, they mocked `telegram` package?
+	// No, the original test file calls `app.PublishPost` which used `app.telegram`.
+	// `app.telegram` was `*telegram.Client`.
+	// In `setupTestApp` original, `telegram` field was NOT set.
+	// So `PublishPost` tests relied on `app.telegram` being nil?
+	// `PublishPost` checks `if a.telegram == nil`.
+	// Wait, original `PublishPost` in `app.go`:
+	// `func (a *App) PublishPost(...)`
+	// It did NOT check if `telegram` is nil before parsing args.
+	// But `a.telegram.ScheduleMessageByID` would panic if `telegram` is nil.
+	// The original `app_test.go` has `TestApp_PublishPost_Errors`. It tests validation errors (channel ID, hash, history, date). It does NOT test success or schedule error.
+	// So we don't need a real telegram client for those tests.
+	
+	// But `PublicationService.PublishPost` MIGHT crash if telegram client is nil?
+	// `s.telegram.ScheduleMessageByID`.
+	// We need to pass a telegram client that doesn't crash, or ensure we only test failure paths that return before calling it.
+	// The tests 1-4 in `TestApp_PublishPost_Errors` fail BEFORE calling `telegram`.
+	// So passing nil is fine for now.
+	var tgApp *telegram.Client // nil
+
+	pubService := service.NewPublicationService(tgClient, tgApp, historyRepo, titleRepo)
 
 	app := &App{
-		ctx:        context.Background(),
-		config:     cfg,
-		uploader:   upl,
-		tgphClient: tgClient,
-		db:         db,
-		dialogs:    &MockDialogProvider{}, // Default mock
+		ctx:          context.Background(),
+		config:       cfg,
+		mangaService: mangaService,
+		pubService:   pubService,
+		settingsRepo: settingsRepo,
+		historyRepo:  historyRepo,
+		titleRepo:    titleRepo,
+		templateRepo: templateRepo,
+		dialogs:      &MockDialogProvider{},
+		authPasswordChan: make(chan string),
 	}
 
 	return app, tsTelegraph, tsS3
@@ -226,10 +273,12 @@ func TestApp_UploadChapter(t *testing.T) {
 		t.Errorf("expected success, got %v", res.Error)
 	}
 
-	// Test nil uploader
-	appNil := &App{uploader: nil}
+	// Test nil uploader - Create App with nil MangaService or nil uploader inside it?
+	// MangaService checks if its uploader is nil.
+	ms := service.NewMangaService(nil)
+	appNil := &App{mangaService: ms}
 	res = appNil.UploadChapter([]string{"f"}, uploader.ResizeSettings{})
-	if res.Success || res.Error != "Загрузчик не инициализирован (проверьте config.json)" {
+	if res.Success || res.Error != "Загрузчик не инициализирован" {
 		t.Error("expected error for nil uploader")
 	}
 }
@@ -254,7 +303,10 @@ func TestApp_UploadChapter_Error(t *testing.T) {
 		Secure: false,
 	})
 	upl := uploader.NewWithClient(minioClient, cfg)
-	app := &App{uploader: upl}
+	
+	// Manually wire app
+	ms := service.NewMangaService(upl)
+	app := &App{mangaService: ms, ctx: context.Background()}
 
 	tmpFile, err := os.CreateTemp("", "test*.png")
 	if err != nil {
@@ -287,13 +339,19 @@ func TestApp_CreateTelegraphPage(t *testing.T) {
 		t.Errorf("expected url http://telegra.ph/test, got %s", resp.Url)
 	}
 
-	// Test failure from client
+	// Test failure
 	tsFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"ok": false, "error": "FAIL"}`))
 	}))
 	defer tsFail.Close()
 
-	app.tgphClient.BaseURL = tsFail.URL
+	// Recreate pubService with failing client
+	cfg := &config.Config{TelegraphToken: "t"}
+	tgClient := telegraph.New(cfg)
+	tgClient.BaseURL = tsFail.URL
+	
+	app.pubService = service.NewPublicationService(tgClient, nil, app.historyRepo, app.titleRepo)
+
 	resp = app.CreateTelegraphPage("Title", nil, 0)
 	// It should log failure and return error string
 	if resp.Success {
@@ -316,7 +374,11 @@ func TestApp_EditTelegraphPage(t *testing.T) {
 		w.Write([]byte(`{"ok": false, "error": "FAIL"}`))
 	}))
 	defer tsFail.Close()
-	app.tgphClient.BaseURL = tsFail.URL
+	
+	cfg := &config.Config{TelegraphToken: "t"}
+	tgClient := telegraph.New(cfg)
+	tgClient.BaseURL = tsFail.URL
+	app.pubService = service.NewPublicationService(tgClient, nil, app.historyRepo, app.titleRepo)
 
 	url = app.EditTelegraphPage("path", "Title", nil, "")
 	if url[:4] == "http" {
@@ -342,7 +404,11 @@ func TestApp_GetTelegraphPage(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer tsFail.Close()
-	app.tgphClient.BaseURL = tsFail.URL
+	
+	cfg := &config.Config{TelegraphToken: "t"}
+	tgClient := telegraph.New(cfg)
+	tgClient.BaseURL = tsFail.URL
+	app.pubService = service.NewPublicationService(tgClient, nil, app.historyRepo, app.titleRepo)
 
 	_, err = app.GetTelegraphPage("http://t.ph/bad")
 	if err == nil {
@@ -396,14 +462,11 @@ func TestApp_History(t *testing.T) {
 	defer ts1.Close()
 	defer ts2.Close()
 
-	app.db.AddHistory("T1", "u1", 1, "tok", nil)
+	app.historyRepo.Add("T1", "u1", 1, "tok", nil)
 
-	// Since DB is shared in setupTestDB ("file::memory:?cache=shared"), 
-	// previous tests might have added history. 
-	// We should clear it first to be deterministic.
 	app.ClearHistory()
 
-	app.db.AddHistory("T1", "u1", 1, "tok", nil)
+	app.historyRepo.Add("T1", "u1", 1, "tok", nil)
 	h := app.GetHistory(10, 0)
 	if len(h) != 1 {
 		t.Errorf("expected 1 item, got %d", len(h))
@@ -460,10 +523,8 @@ func TestApp_PublishPost_Errors(t *testing.T) {
 	}
 
 	// 4. Date Parse Error
-	app.db.AddHistory("T", "u", 1, "tok", nil)
-	// We need ID. Since we cleared or it's new DB? setupTestDB uses shared cache.
-	// But each test runs sequentially in Go unless Parallel is called.
-	// Let's get the ID.
+	app.historyRepo.Add("T", "u", 1, "tok", nil)
+	
 	hist := app.GetHistory(1, 0)
 	if len(hist) == 0 {
 		t.Fatal("failed to setup history")
