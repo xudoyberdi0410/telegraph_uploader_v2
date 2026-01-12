@@ -1,6 +1,6 @@
 <script>
     import { TextField, Button, Icon, Dialog } from "m3-svelte";
-    import { appState } from "../stores/appStore.svelte";
+    import { titlesStore } from "../stores/titles.svelte";
 
     // Icons
     import iconFolder from "@ktibow/iconset-material-symbols/folder-open-outline";
@@ -20,7 +20,7 @@
 
     function handleCreateTitle() {
         if (!newTitleName.trim()) return;
-        appState.createTitleAction(newTitleName, newTitleFolder);
+        titlesStore.createTitleAction(newTitleName, newTitleFolder);
         newTitleName = "";
         newTitleFolder = "";
         showNewTitleDialog = false;
@@ -64,11 +64,11 @@
     <div class="title-select-wrapper">
         <select
             class="native-select"
-            bind:value={appState.selectedTitleId}
+            bind:value={titlesStore.selectedTitleId}
             disabled={isProcessing}
         >
             <option value={0}>Без тайтла</option>
-            {#each appState.titles as title}
+            {#each titlesStore.titles as title}
                 <option value={title.id}>{title.name}</option>
             {/each}
         </select>

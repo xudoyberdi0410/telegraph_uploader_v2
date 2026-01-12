@@ -1,7 +1,7 @@
 <script>
     import ImageCard from "./ImageCard.svelte";
 
-    import { appState } from "../stores/appStore.svelte.js";
+    import { editorStore } from "../stores/editor.svelte";
 
     let { isProcessing } = $props();
 
@@ -20,9 +20,9 @@
         const sourceIdx = draggedIndex;
         const targetIdx = index;
 
-        const item = appState.images[sourceIdx];
-        appState.images.splice(sourceIdx, 1);
-        appState.images.splice(targetIdx, 0, item);
+        const item = editorStore.images[sourceIdx];
+        editorStore.images.splice(sourceIdx, 1);
+        editorStore.images.splice(targetIdx, 0, item);
 
         draggedIndex = targetIdx;
     }
@@ -35,18 +35,18 @@
 
 <div class="scrollable">
     <div class="grid" class:dimmed={isProcessing}>
-        {#each appState.images as img, index (img.id)}
+        {#each editorStore.images as img, index (img.id)}
             <ImageCard
                 {img}
                 {isProcessing}
-                onRemove={() => appState.removeImageByIndex(index)}
+                onRemove={() => editorStore.removeImageByIndex(index)}
                 onDragStart={(e) => handleDragStart(e, index)}
                 onDragOver={(e) => handleDragOver(e, index)}
                 onDragEnd={handleDragEnd}
             />
         {/each}
 
-        {#if appState.images.length === 0}
+        {#if editorStore.images.length === 0}
             <div class="empty-state">
                 <p>Выберите файлы или папку</p>
             </div>

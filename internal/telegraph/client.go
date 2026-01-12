@@ -52,21 +52,11 @@ func (c *Client) CreatePage(title string, imageUrls []string) string {
 			return "Ошибка создания аккаунта Telegraph: " + err.Error()
 		}
 		// Запоминаем токен в памяти клиента, чтобы не создавать аккаунт каждый раз
-		c.Token = token 
+		c.Token = token
 		fmt.Println("ВНИМАНИЕ: Создан новый временный токен Telegraph:", token)
 	}
 
-	// Формируем контент
-	var content []TelegraphNode
-	for _, link := range imageUrls {
-		node := TelegraphNode{
-			Tag: "img",
-			Attrs: map[string]string{
-				"src": link,
-			},
-		}
-		content = append(content, node)
-	}
+	content := c.imagesToNodes(imageUrls)
 
 	contentJson, err := json.Marshal(content)
 	if err != nil {
@@ -87,7 +77,7 @@ func (c *Client) CreatePage(title string, imageUrls []string) string {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	
+
 	var tgResp TelegraphResponse
 	if err := json.Unmarshal(body, &tgResp); err != nil {
 		return "Ошибка ответа API: " + string(body)
@@ -113,7 +103,7 @@ func (c *Client) createAccount(shortName string) (string, error) {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	
+
 	type AccountResp struct {
 		Ok     bool `json:"ok"`
 		Result struct {
@@ -122,7 +112,7 @@ func (c *Client) createAccount(shortName string) (string, error) {
 	}
 	var acc AccountResp
 	json.Unmarshal(body, &acc)
-	
+
 	if !acc.Ok {
 		return "", fmt.Errorf("не удалось создать аккаунт")
 	}
@@ -137,17 +127,7 @@ func (c *Client) EditPage(path string, title string, imageUrls []string, accessT
 		token = c.Token
 	}
 
-	// Формируем контент
-	var content []TelegraphNode
-	for _, link := range imageUrls {
-		node := TelegraphNode{
-			Tag: "img",
-			Attrs: map[string]string{
-				"src": link,
-			},
-		}
-		content = append(content, node)
-	}
+	content := c.imagesToNodes(imageUrls)
 
 	contentJson, err := json.Marshal(content)
 	if err != nil {
@@ -169,7 +149,7 @@ func (c *Client) EditPage(path string, title string, imageUrls []string, accessT
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	
+
 	var tgResp TelegraphResponse
 	if err := json.Unmarshal(body, &tgResp); err != nil {
 		return "Ошибка ответа API: " + string(body)
@@ -181,6 +161,21 @@ func (c *Client) EditPage(path string, title string, imageUrls []string, accessT
 
 	// Успех, возвращаем URL (хотя он не меняется при редактировании)
 	return tgResp.Result.Url
+}
+
+// imagesToNodes преобразует список URL-адресов изображений в узлы TelegraphNode
+func (c *Client) imagesToNodes(imageUrls []string) []TelegraphNode {
+	var content []TelegraphNode
+	for _, link := range imageUrls {
+		node := TelegraphNode{
+			Tag: "img",
+			Attrs: map[string]string{
+				"src": link,
+			},
+		}
+		content = append(content, node)
+	}
+	return content
 }
 
 type PageResponse struct {

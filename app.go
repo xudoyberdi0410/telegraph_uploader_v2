@@ -18,26 +18,10 @@ import (
 	"telegraph_uploader_v2/internal/telegraph"
 	"telegraph_uploader_v2/internal/uploader"
 
-	"github.com/gotd/td/tg"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// DialogProvider interface mocks Wails dialogs
-type DialogProvider interface {
-	OpenDirectory(ctx context.Context, options wailsRuntime.OpenDialogOptions) (string, error)
-	OpenMultipleFiles(ctx context.Context, options wailsRuntime.OpenDialogOptions) ([]string, error)
-}
 
-// WailsDialogProvider implements DialogProvider using real Wails runtime
-type WailsDialogProvider struct{}
-
-func (w *WailsDialogProvider) OpenDirectory(ctx context.Context, options wailsRuntime.OpenDialogOptions) (string, error) {
-	return wailsRuntime.OpenDirectoryDialog(ctx, options)
-}
-
-func (w *WailsDialogProvider) OpenMultipleFiles(ctx context.Context, options wailsRuntime.OpenDialogOptions) ([]string, error) {
-	return wailsRuntime.OpenMultipleFilesDialog(ctx, options)
-}
 
 type App struct {
 	ctx        context.Context
@@ -48,7 +32,6 @@ type App struct {
 	db         *database.Database
 	dialogs    DialogProvider
 
-	authCodeChan     chan string
 	authPasswordChan chan string // Added channel for password
 }
 
@@ -95,7 +78,6 @@ func NewApp() *App {
 		db:               dbService,
 		dialogs:          &WailsDialogProvider{},
 		telegram:         tgApp,
-		authCodeChan:     make(chan string),
 		authPasswordChan: make(chan string), // Initialize channel
 	}
 }
@@ -109,27 +91,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
-// === СТРУКТУРЫ ===
-type ChapterResponse struct {
-	Path            string   `json:"path"`
-	Title           string   `json:"title"`
-	Images          []string `json:"images"`
-	ImageCount      int      `json:"imageCount"`
-	DetectedTitleID *uint    `json:"detected_title_id"`
-}
 
-type CreatePageResponse struct {
-	Success   bool   `json:"success"`
-	Url       string `json:"url"`
-	HistoryID uint   `json:"history_id"`
-	Error     string `json:"error"`
-}
-
-type TelegramChannel struct {
-	ID         string `json:"id"`
-	Title      string `json:"title"`
-	AccessHash string `json:"access_hash"`
-}
 
 // === МЕТОДЫ ===
 
@@ -143,7 +105,7 @@ func (a *App) UploadChapter(filePaths []string, resizeSettings uploader.ResizeSe
 	}
 
 	// Просто вызываем метод нашего сервиса
-	result := a.uploader.UploadChapter(filePaths, resizeSettings)
+	result := a.uploader.UploadChapter(a.ctx, filePaths, resizeSettings)
 
 	if result.Success {
 		log.Printf("[App] UploadChapter finished successfully. URLs generated: %d", len(result.Links))
@@ -322,14 +284,7 @@ func getImagesInDir(dirPath string) ([]string, error) {
 	return images, nil
 }
 
-type FrontendSettings struct {
-	Resize           bool   `json:"resize"`
-	ResizeTo         int    `json:"resize_to"`
-	WebpQuality      int    `json:"webp_quality"`
-	LastChannelID    string `json:"last_channel_id"`
-	LastChannelHash  string `json:"last_channel_hash"`
-	LastChannelTitle string `json:"last_channel_title"`
-}
+
 
 // GetSettings вызывается фронтендом при старте
 func (a *App) GetSettings() FrontendSettings {
@@ -379,24 +334,6 @@ func (a *App) ClearHistory() {
 	log.Println("[App] History cleared")
 }
 
-func (a *App) TelegramLogin(phone string) string {
-	log.Printf("[App] Starting Telegram login for %s", phone)
-
-	go func() {
-		// 'a' satisfies AuthFlowHandler because it implements GetCode and GetPassword
-		err := a.telegram.Login(a.ctx, phone, a)
-		if err != nil {
-			log.Printf("[App] Login failed: %v", err)
-			wailsRuntime.EventsEmit(a.ctx, "tg_auth_error", err.Error())
-		} else {
-			log.Println("[App] Login success!")
-			wailsRuntime.EventsEmit(a.ctx, "tg_auth_success", true)
-		}
-	}()
-
-	return "Process started"
-}
-
 func (a *App) TelegramLoginQR() string {
 	log.Println("[App] Starting Telegram QR login...")
 
@@ -423,14 +360,6 @@ func (a *App) TelegramLoginQR() string {
 	return "QR Process started"
 }
 
-// TelegramSubmitCode вызывается из UI, когда пользователь ввел код
-func (a *App) TelegramSubmitCode(code string) {
-	log.Printf("[App] User submitted code: %s", code)
-	if a.authCodeChan != nil {
-		a.authCodeChan <- code
-	}
-}
-
 func (a *App) AddTitleVariable(titleID uint, key string, value string) error {
 	return a.db.AddTitleVariable(titleID, key, value)
 }
@@ -439,57 +368,6 @@ func (a *App) AddTitleVariable(titleID uint, key string, value string) error {
 func (a *App) TelegramSubmitPassword(password string) {
 	log.Printf("[App] User submitted password") // Don't log the actual password
 	a.authPasswordChan <- password
-}
-
-// GetCode is called by the Telegram Client
-func (a *App) GetCode(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
-	// 1. Determine where the code was sent
-	typeStr := "unknown"
-	var length int
-
-	switch t := sentCode.Type.(type) {
-	case *tg.AuthSentCodeTypeApp:
-		typeStr = "app"
-		length = t.Length
-	case *tg.AuthSentCodeTypeSMS:
-		typeStr = "sms"
-		length = t.Length
-	case *tg.AuthSentCodeTypeCall:
-		typeStr = "call"
-		length = t.Length
-	case *tg.AuthSentCodeTypeFlashCall:
-		typeStr = "flash_call"
-	}
-
-	nextTypeStr := "none"
-	if sentCode.NextType != nil {
-		switch sentCode.NextType.(type) {
-		case *tg.AuthCodeTypeSMS:
-			nextTypeStr = "sms"
-		case *tg.AuthCodeTypeCall:
-			nextTypeStr = "call"
-		case *tg.AuthCodeTypeFlashCall:
-			nextTypeStr = "flash_call"
-		}
-	}
-
-	log.Printf("[App] Requesting code from user. Code sent via: %s, length: %d, timeout: %d, next_type: %s", typeStr, length, sentCode.Timeout, nextTypeStr)
-
-	// 2. Сообщаем UI, что нам нужен код, и передаем тип
-	wailsRuntime.EventsEmit(a.ctx, "tg_request_code", map[string]interface{}{
-		"type":      typeStr,
-		"length":    length,
-		"timeout":   sentCode.Timeout,
-		"next_type": nextTypeStr,
-	})
-
-	// 3. Ждем ответа из канала (который заполнит метод TelegramSubmitCode)
-	select {
-	case code := <-a.authCodeChan:
-		return code, nil
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
 }
 
 // GetPassword is called by the Telegram Client (if 2FA is enabled)

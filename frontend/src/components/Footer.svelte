@@ -7,7 +7,8 @@
     import { Button, Card, FAB, Icon, WavyLinearProgress } from "m3-svelte";
     import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 
-    import { appState } from "../stores/appStore.svelte";
+    import { editorStore } from "../stores/editor.svelte";
+    import { navigationStore } from "../stores/navigation.svelte";
 
     let {
         isProcessing = false,
@@ -19,10 +20,10 @@
     } = $props();
 
     function publishToTelegram() {
-        appState.navigateTo("telegram", {
-            historyId: appState.currentHistoryId,
-            articleTitle: appState.chapterTitle,
-            titleId: appState.currentTitleId || 0,
+        navigationStore.navigateTo("telegram", {
+            historyId: editorStore.currentHistoryId,
+            articleTitle: editorStore.chapterTitle,
+            titleId: editorStore.currentTitleId || 0,
         });
     }
 </script>
@@ -47,10 +48,10 @@
             <Icon icon={iconDelete} />
         </Button>
         <div class="card-wrapper">
-            {#if appState.finalUrl}
+            {#if editorStore.finalUrl}
                 <div class="success-container">
                     <FAB
-                        text={appState.finalUrl}
+                        text={editorStore.finalUrl}
                         color="tertiary"
                         onclick={copyLink}
                     />
@@ -60,7 +61,7 @@
                             size="m"
                             square
                             onclick={() => {
-                                BrowserOpenURL(appState.finalUrl);
+                                BrowserOpenURL(editorStore.finalUrl);
                             }}
                         >
                             <Icon icon={iconOpen} />
@@ -97,10 +98,10 @@
             onclick={createArticleAction}
             disabled={isProcessing ||
                 !hasImages ||
-                (appState.editMode && !appState.isDirty)}
-            variant={appState.editMode ? "filled" : "tonal"}
+                (editorStore.editMode && !editorStore.isDirty)}
+            variant={editorStore.editMode ? "filled" : "tonal"}
         >
-            {appState.editMode ? "Обновить" : "Опубликовать"}
+            {editorStore.editMode ? "Обновить" : "Опубликовать"}
         </Button>
     {/if}
 </footer>

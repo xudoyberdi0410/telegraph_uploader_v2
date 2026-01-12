@@ -10,7 +10,8 @@
 
     import { GetHistory } from "../../wailsjs/go/main/App";
     import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
-    import { appState } from "../stores/appStore.svelte";
+    import { navigationStore } from "../stores/navigation.svelte";
+    import { editorStore } from "../stores/editor.svelte";
 
     let historyItems = $state([]);
 
@@ -64,7 +65,7 @@
     }
 
     function publishAction(item) {
-        appState.navigateTo("telegram", {
+        navigationStore.navigateTo("telegram", {
             historyId: item.id,
             articleTitle: item.title,
             titleId: item.title_id || 0,
@@ -103,7 +104,7 @@
                         <Icon icon={iconCopy} />
                         Копировать
                     </Button>
-                    <Button onclick={() => appState.loadArticle(item)}>
+                    <Button onclick={() => editorStore.loadArticle(item)}>
                         <Icon icon={editIcon} />
                         Редактировать
                     </Button>

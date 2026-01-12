@@ -3,137 +3,55 @@ import {
     OpenFolderDialog,
     UploadChapter,
     CreateTelegraphPage,
-    GetSettings,
-    SaveSettings,
     EditTelegraphPage,
-    GetTelegraphPage,
-    GetTitles,
-    CreateTitle
-} from "../../wailsjs/go/main/App"
+    GetTelegraphPage
+} from "../../wailsjs/go/main/App";
 
+import { settingsStore } from "./settings.svelte.js";
+import { titlesStore } from "./titles.svelte.js";
+import { navigationStore } from "./navigation.svelte.js";
 
-class AppState {
-    images = $state([])
-    chapterTitle = $state("")
-    isProcessing = $state(false)
-    statusMsg = $state("")
-    finalUrl = $state("")
-    currentPage = $state("home") // Moved from App.svelte
-    pageProps = $state({})
-
-    navigateTo(page, props = {}) {
-        this.currentPage = page;
-        this.pageProps = props;
-    }
+class EditorStore {
+    images = $state([]);
+    chapterTitle = $state("");
+    isProcessing = $state(false);
+    statusMsg = $state("");
+    finalUrl = $state("");
 
     // Edit Mode State
-    editMode = $state(false)
-    editArticlePath = $state("")
-    editAccessToken = $state("")
-    currentHistoryId = $state(0)
-    currentTitleId = $state(0)
-
-    // Titles State
-    titles = $state([])
-    selectedTitleId = $state(0)
+    editMode = $state(false);
+    editArticlePath = $state("");
+    editAccessToken = $state("");
+    currentHistoryId = $state(0);
+    currentTitleId = $state(0);
 
     // Change Detection
-    savedTitle = $state("")
-    savedImagesJson = $state("[]")
+    savedTitle = $state("");
+    savedImagesJson = $state("[]");
 
     isDirty = $derived(
         this.chapterTitle !== this.savedTitle ||
         JSON.stringify(this.images.map(i => i.id)) !== this.savedImagesJson
-    )
+    );
 
-    settings = $state({
-        resize: false,
-        resize_to: 1600,
-        webp_quality: 80,
-        last_channel_id: "0",
-        last_channel_hash: "0",
-        last_channel_title: ""
-    })
-
-    isInitialized = false
-    saveTimer = null
-
-    constructor() {
-        this.loadSettings()
-        this.loadTitles()
-    }
-
-    async loadTitles() {
-        try {
-            this.titles = await GetTitles() || [];
-        } catch (e) {
-            console.error("Failed to load titles:", e);
-        }
-    }
-
-    async createTitleAction(name, rootFolder) {
-        if (!name) return;
-        try {
-            await CreateTitle(name, rootFolder || "");
-            await this.loadTitles();
-            // Automatically select the new title
-            const newTitle = this.titles.find(t => t.name === name);
-            if (newTitle) {
-                this.selectedTitleId = newTitle.id;
-            }
-            this.statusMsg = "Тайтл создан!";
-        } catch (e) {
-            console.error("Failed to create title:", e);
-            this.statusMsg = "Ошибка создания тайтла: " + e;
-        }
-    }
-
-    // Helper to snapshot current state
     updateSavedState() {
         this.savedTitle = this.chapterTitle;
         this.savedImagesJson = JSON.stringify(this.images.map(i => i.id));
     }
 
-    async loadSettings() {
-        try {
-            const saved = await GetSettings();
-            this.settings = saved;
-            this.isInitialized = true;
-            console.log("Настройки загружены:", saved);
-        } catch (e) {
-            console.error("Не удалось загрузить настройки:", e);
-            this.isInitialized = true;
-        }
-    }
-
-    triggerAutoSave() {
-        if (!this.isInitialized) return;
-
-        clearTimeout(this.saveTimer)
-        this.saveTimer = setTimeout(() => {
-            const settingsToSave = $state.snapshot(this.settings);
-            settingsToSave.webp_quality = Math.round(settingsToSave.webp_quality);
-            SaveSettings(settingsToSave);
-            console.log("Настройки сохранены");
-        }, 500);
-    }
-
     detectTitleFromPath(filePath) {
-        if (!filePath || !this.titles || this.titles.length === 0) return null;
+        if (!filePath || !titlesStore.titles || titlesStore.titles.length === 0) return null;
 
-        // Normalize path separators to forward slashes for consistent comparison
         const normalizedFilePath = filePath.replace(/\\/g, '/').toLowerCase();
-
         let bestMatch = null;
         let maxLen = 0;
 
-        for (const title of this.titles) {
+        for (const title of titlesStore.titles) {
             if (!title.folders) continue;
             for (const folder of title.folders) {
                 if (!folder.path) continue;
                 const normalizedFolderPath = folder.path.replace(/\\/g, '/').toLowerCase();
 
-                // Check if file path starts with folder path
                 if (normalizedFilePath.startsWith(normalizedFolderPath)) {
                     if (normalizedFolderPath.length > maxLen) {
                         maxLen = normalizedFolderPath.length;
@@ -148,12 +66,11 @@ class AppState {
     addImagesFromPaths(paths) {
         if (!paths || paths.length === 0) return;
 
-        // Try to detect title if not already selected or if currently "No Title" (0)
-        // We only check the first file for performance and assumption that all files are from same context usually
-        if (this.selectedTitleId === 0 && paths.length > 0) {
+        // Auto-detect title if not selected
+        if (titlesStore.selectedTitleId === 0 && paths.length > 0) {
             const detectedTitle = this.detectTitleFromPath(paths[0]);
             if (detectedTitle) {
-                this.selectedTitleId = detectedTitle.id;
+                titlesStore.selectedTitleId = detectedTitle.id;
                 console.log(`Auto-detected title: ${detectedTitle.name}`);
             }
         }
@@ -163,7 +80,6 @@ class AppState {
                 if (!fullPath.match(/\.(jpg|jpeg|png|webp)$/i)) return null;
 
                 const fileName = fullPath.replace(/^.*[\\/]/, "");
-
                 const exists = this.images.find(img => img.originalPath === fullPath);
                 if (exists) return null;
 
@@ -173,7 +89,7 @@ class AppState {
                     thumbnailSrc: `/thumbnail/${encodeURIComponent(fullPath)}`,
                     originalPath: fullPath,
                     selected: true,
-                    type: 'file' // Distinguish from 'url'
+                    type: 'file'
                 };
             })
             .filter(Boolean);
@@ -193,15 +109,12 @@ class AppState {
         this.chapterTitle = "";
         this.statusMsg = "";
         this.finalUrl = "";
-
-        // Reset Edit Mode
         this.editMode = false;
         this.editArticlePath = "";
         this.editAccessToken = "";
         this.currentHistoryId = 0;
         this.currentTitleId = 0;
-
-        this.updateSavedState(); // Reset dirty state
+        this.updateSavedState();
     }
 
     async selectFolderAction() {
@@ -241,25 +154,19 @@ class AppState {
         this.statusMsg = "Загрузка статьи...";
 
         try {
-            // historyItem must have tgph_token (AccessToken)
-            // We need it for editing.
-            this.currentHistoryId = historyItem.id
-            this.currentTitleId = historyItem.title_id || 0
-            if (!historyItem.tgph_token && !historyItem.TgphToken) {
-                // Try to fallback or warn?
-                // If token is missing, we might fail to edit if it's not the same as global token.
-            }
+            this.currentHistoryId = historyItem.id;
+            this.currentTitleId = historyItem.title_id || 0;
             const token = historyItem.tgph_token || historyItem.TgphToken || "";
 
             const pageData = await GetTelegraphPage(historyItem.url);
 
             this.editMode = true;
             this.editAccessToken = token;
-            this.editArticlePath = pageData.path.split('/').pop(); // Extract path from URL just in case
+            this.editArticlePath = pageData.path.split('/').pop();
             this.chapterTitle = pageData.title;
 
             const existingImages = pageData.images.map((url, idx) => ({
-                id: url, // URL as ID
+                id: url,
                 name: `Image ${idx + 1}`,
                 thumbnailSrc: url,
                 originalPath: url,
@@ -268,22 +175,16 @@ class AppState {
             }));
 
             this.images = existingImages;
-
-            // Set Edit Mode state
-            this.editMode = true;
-            this.editAccessToken = token;
-            this.editArticlePath = pageData.path.split('/').pop();
             this.finalUrl = historyItem.url;
-
-            this.updateSavedState(); // Mark current state as "clean"
+            this.updateSavedState();
 
             this.statusMsg = "Статья загружена";
-            this.currentPage = "home"; // Switch to home
+            navigationStore.navigateTo("home");
         } catch (e) {
             console.error(e);
             this.statusMsg = "Ошибка загрузки: " + e.message;
             alert("Не удалось загрузить статью: " + e.message);
-            this.editMode = false; // Fallback
+            this.editMode = false;
         } finally {
             this.isProcessing = false;
         }
@@ -305,12 +206,10 @@ class AppState {
         this.finalUrl = "";
 
         try {
-            const settingsSnapshot = $state.snapshot(this.settings);
+            const settingsSnapshot = $state.snapshot(settingsStore.settings);
 
-            // Separate local files from existing URLs
             const localFiles = selectedImages.filter(img => img.type === 'file').map(img => img.originalPath);
-            const existingUrls = selectedImages.filter(img => img.type === 'url').map(img => img.originalPath);
-
+            
             let newLinks = [];
             if (localFiles.length > 0) {
                 this.statusMsg = `Загрузка ${localFiles.length} новых изображений...`;
@@ -319,15 +218,6 @@ class AppState {
                 newLinks = uploadRes.links;
             }
 
-            // Combine links preserving order? A bit tricky because we separated them.
-            // If user reordered images, `selectedImages` is in correct order.
-            // We need to map `selectedImages` to final URLs.
-
-            // Optimization: Create a map of localPath -> uploadedUrl
-            // But Wait, UploadChapter returns list of links corresponding to input list?
-            // "The order of files in the input list is preserved." - usually yes.
-
-            // Let's assume UploadChapter returns links in same order as input 'localFiles'.
             let localFileIndex = 0;
             const finalImageUrls = selectedImages.map(img => {
                 if (img.type === 'url') {
@@ -341,15 +231,12 @@ class AppState {
 
             if (this.editMode) {
                 this.statusMsg = "Обновление статьи в Telegraph...";
-                // Use editArticlePath. If we have full URL, we need slug.
-                // loadArticle sets editArticlePath to slug.
                 const path = this.editArticlePath;
                 const resultUrl = await EditTelegraphPage(path, this.chapterTitle, finalImageUrls, this.editAccessToken);
 
                 if (resultUrl.startsWith("http")) {
                     this.finalUrl = resultUrl;
                     this.statusMsg = "Статья обновлена!";
-                    // Update state to match clean
                     this.refreshImagesAfterSave(finalImageUrls);
                 } else {
                     throw new Error(resultUrl);
@@ -357,8 +244,7 @@ class AppState {
 
             } else {
                 this.statusMsg = "Создание статьи в Telegraph...";
-                // Use selectedTitleId if available
-                const titleIdToUse = this.selectedTitleId ? this.selectedTitleId : 0;
+                const titleIdToUse = titlesStore.selectedTitleId ? titlesStore.selectedTitleId : 0;
                 const response = await CreateTelegraphPage(this.chapterTitle, finalImageUrls, titleIdToUse);
 
                 if (response.success) {
@@ -366,14 +252,10 @@ class AppState {
                     this.currentHistoryId = response.history_id;
                     this.statusMsg = "Готово!";
 
-                    // Switch to Edit Mode for this new article
                     this.editMode = true;
-                    // Extract path: https://telegra.ph/Some-Title-01-09 -> Some-Title-01-09
                     const parts = response.url.split('/');
                     this.editArticlePath = parts[parts.length - 1];
-                    this.editAccessToken = ""; // Use internal default
-
-                    // Update current IDs
+                    this.editAccessToken = "";
                     this.currentTitleId = titleIdToUse;
 
                     this.refreshImagesAfterSave(finalImageUrls);
@@ -390,11 +272,9 @@ class AppState {
     }
 
     refreshImagesAfterSave(newUrls) {
-        // Replace all images with type='url' and new paths, preserving order
-        // This ensures next save sees them as existing URLs
         this.images = newUrls.map((url, idx) => ({
             id: url,
-            name: `Image ${idx + 1}`, // Or keep original name if possible? Hard since we mapped.
+            name: `Image ${idx + 1}`,
             thumbnailSrc: url,
             originalPath: url,
             selected: true,
@@ -404,4 +284,4 @@ class AppState {
     }
 }
 
-export const appState = new AppState()
+export const editorStore = new EditorStore();

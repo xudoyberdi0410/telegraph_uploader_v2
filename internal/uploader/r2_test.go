@@ -1,6 +1,7 @@
 package uploader
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -87,7 +88,7 @@ func TestUploadChapter(t *testing.T) {
 	imgPath := createTestImage(t, tmpDir, "upload.png", 100, 100)
 
 	// Valid upload
-	result := uploader.UploadChapter([]string{imgPath}, ResizeSettings{})
+	result := uploader.UploadChapter(context.Background(), []string{imgPath}, ResizeSettings{})
 	if !result.Success {
 		t.Errorf("expected success, got error: %s", result.Error)
 	}
@@ -99,7 +100,7 @@ func TestUploadChapter(t *testing.T) {
 	}
 
 	// Invalid file upload
-	result = uploader.UploadChapter([]string{"nonexistent.png"}, ResizeSettings{})
+	result = uploader.UploadChapter(context.Background(), []string{"nonexistent.png"}, ResizeSettings{})
 	if result.Success {
 		t.Error("expected failure for nonexistent file")
 	}
@@ -124,7 +125,7 @@ func TestUploadChapter_UploadError(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	imgPath := createTestImage(t, tmpDir, "fail.png", 10, 10)
 
-	result := uploader.UploadChapter([]string{imgPath}, ResizeSettings{})
+	result := uploader.UploadChapter(context.Background(), []string{imgPath}, ResizeSettings{})
 	if result.Success {
 		t.Error("expected failure when server errors")
 	}
@@ -140,7 +141,7 @@ func TestUploadChapter_PartialFailure(t *testing.T) {
 	
 	goodPath := createTestImage(t, tmpDir, "good.png", 10, 10)
 
-badPath := "nonexistent.png"
+	badPath := "nonexistent.png"
 
 	// Mock server always succeeds for the good file
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +157,7 @@ badPath := "nonexistent.png"
 	
 	uploader := NewWithClient(minioClient, &config.Config{BucketName: "b", PublicDomain: "http://d"})
 
-	result := uploader.UploadChapter([]string{goodPath, badPath}, ResizeSettings{})
+	result := uploader.UploadChapter(context.Background(), []string{goodPath, badPath}, ResizeSettings{})
 	
 	// Expect failure because at least one failed
 	if result.Success {

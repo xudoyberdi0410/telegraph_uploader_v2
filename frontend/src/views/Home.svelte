@@ -1,27 +1,27 @@
 <script>
     import { Snackbar, snackbar } from "m3-svelte";
 
-    import { appState } from "../stores/appStore.svelte";
+    import { editorStore } from "../stores/editor.svelte";
 
     import Header from "../components/Header.svelte";
     import ImageGrid from "../components/ImageGrid.svelte";
     import Footer from "../components/Footer.svelte";
 
     function confirmClear() {
-        if (confirm("Очистить список?")) appState.clearAll();
+        if (confirm("Очистить список?")) editorStore.clearAll();
     }
 
     function copyLink() {
-        if (appState.finalUrl) {
-            navigator.clipboard.writeText(appState.finalUrl);
-            appState.statusMsg = "Ссылка скопирована!";
+        if (editorStore.finalUrl) {
+            navigator.clipboard.writeText(editorStore.finalUrl);
+            editorStore.statusMsg = "Ссылка скопирована!";
             snackbar("Ссылка скопирована!", undefined, true);
         }
     }
 
     $effect(() => {
-        if (appState.statusMsg) {
-            snackbar(appState.statusMsg);
+        if (editorStore.statusMsg) {
+            snackbar(editorStore.statusMsg);
         }
     });
 
@@ -41,25 +41,25 @@
                 })
                 .filter((p) => p);
 
-            appState.addImagesFromPaths(paths);
+            editorStore.addImagesFromPaths(paths);
         }
     }
 </script>
 
 <main role="application" ondragover={handleDragOver} ondrop={handleDrop}>
     <Header
-        bind:chapterTitle={appState.chapterTitle}
-        isProcessing={appState.isProcessing}
-        onSelectFolder={() => appState.selectFolderAction()}
-        onSelectFiles={() => appState.selectFilesAction()}
+        bind:chapterTitle={editorStore.chapterTitle}
+        isProcessing={editorStore.isProcessing}
+        onSelectFolder={() => editorStore.selectFolderAction()}
+        onSelectFiles={() => editorStore.selectFilesAction()}
     />
 
-    <ImageGrid isProcessing={appState.isProcessing} />
+    <ImageGrid isProcessing={editorStore.isProcessing} />
     <Footer
-        isProcessing={appState.isProcessing}
-        hasImages={appState.images.length > 0}
-        pageCount={appState.images.length}
-        createArticleAction={appState.createArticleAction}
+        isProcessing={editorStore.isProcessing}
+        hasImages={editorStore.images.length > 0}
+        pageCount={editorStore.images.length}
+        createArticleAction={editorStore.createArticleAction}
         clearAll={confirmClear}
         {copyLink}
     />

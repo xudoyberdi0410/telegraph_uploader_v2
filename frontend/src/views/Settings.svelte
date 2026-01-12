@@ -1,12 +1,12 @@
 <script>
     import { Card, Slider, Switch, TextField } from "m3-svelte";
 
-    import { appState } from "../stores/appStore.svelte";
+    import { settingsStore } from "../stores/settings.svelte";
 
     $effect(() => {
-        JSON.stringify(appState.settings);
+        JSON.stringify(settingsStore.settings);
 
-        appState.triggerAutoSave();
+        settingsStore.triggerAutoSave();
     });
 </script>
 
@@ -14,21 +14,21 @@
     <Card variant="filled">
         <label class="card-wrapper switch-settings">
             <div class="text">Изменять размер</div>
-            <Switch bind:checked={appState.settings.resize} />
+            <Switch bind:checked={settingsStore.settings.resize} />
         </label>
     </Card>
 
     <Card variant="filled">
         <TextField
-            disabled={!appState.settings.resize}
+            disabled={!settingsStore.settings.resize}
             label="Ширина (px)"
-            bind:value={appState.settings.resize_to}
+            bind:value={settingsStore.settings.resize_to}
             type="number"
         />
     </Card>
     <Card variant="filled">
         <div class="text">Уровень сжатия</div>
-        <Slider bind:value={appState.settings.webp_quality} />
+        <Slider bind:value={settingsStore.settings.webp_quality} />
     </Card>
 </div>
 

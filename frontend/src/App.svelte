@@ -16,7 +16,7 @@
     import History from "./views/History.svelte";
     import Telegram from "./views/Telegram.svelte";
 
-    import { appState } from "./stores/appStore.svelte"; // Import appState
+    import { navigationStore } from "./stores/navigation.svelte";
 
     // let currentPage = $state("home"); // Removed local state
 </script>
@@ -27,43 +27,43 @@
             variant="auto"
             icon={iconHome}
             text="Главная"
-            selected={appState.currentPage === "home"}
-            onclick={() => (appState.currentPage = "home")}
+            selected={navigationStore.currentPage === "home"}
+            onclick={() => (navigationStore.currentPage = "home")}
         />
 
         <NavCMLXItem
             variant="auto"
             icon={iconSettings}
             text="Настройки"
-            selected={appState.currentPage === "settings"}
-            onclick={() => (appState.currentPage = "settings")}
+            selected={navigationStore.currentPage === "settings"}
+            onclick={() => (navigationStore.currentPage = "settings")}
         />
 
         <NavCMLXItem
             variant="auto"
             icon={iconHistory}
             text="История"
-            selected={appState.currentPage === "history"}
-            onclick={() => (appState.currentPage = "history")}
+            selected={navigationStore.currentPage === "history"}
+            onclick={() => (navigationStore.currentPage = "history")}
         />
         <NavCMLXItem
             variant="auto"
             icon={iconTelegram}
             text="Telegram"
-            selected={appState.currentPage === "telegram"}
-            onclick={() => appState.navigateTo("telegram")}
+            selected={navigationStore.currentPage === "telegram"}
+            onclick={() => navigationStore.navigateTo("telegram")}
         />
     </NavCMLX>
 
     <main class="content">
-        {#if appState.currentPage === "home"}
+        {#if navigationStore.currentPage === "home"}
             <Home />
-        {:else if appState.currentPage === "settings"}
+        {:else if navigationStore.currentPage === "settings"}
             <Settings />
-        {:else if appState.currentPage === "history"}
+        {:else if navigationStore.currentPage === "history"}
             <History />
-        {:else if appState.currentPage === "telegram"}
-            <Telegram {...appState.pageProps} />
+        {:else if navigationStore.currentPage === "telegram"}
+            <Telegram {...navigationStore.pageProps} />
         {/if}
     </main>
 </div>

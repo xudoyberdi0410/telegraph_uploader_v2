@@ -1,5 +1,8 @@
 <script>
-    import { appState } from "../stores/appStore.svelte";
+    import { settingsStore } from "../stores/settings.svelte";
+    import { titlesStore } from "../stores/titles.svelte";
+    import { editorStore } from "../stores/editor.svelte";
+    import { navigationStore } from "../stores/navigation.svelte";
     import {
         SearchChannels,
         GetTemplates,
@@ -98,10 +101,10 @@
         selectedChannelObj = channel;
 
         // Save to settings
-        appState.settings.last_channel_id = String(channel.id);
-        appState.settings.last_channel_hash = String(channel.access_hash);
-        appState.settings.last_channel_title = channel.title;
-        appState.triggerAutoSave();
+        settingsStore.settings.last_channel_id = String(channel.id);
+        settingsStore.settings.last_channel_hash = String(channel.access_hash);
+        settingsStore.settings.last_channel_title = channel.title;
+        settingsStore.triggerAutoSave();
     }
 
     async function loadTemplates() {
@@ -112,17 +115,17 @@
         try {
             if (!historyId || historyId === 0) {
                 // Prevent access without context
-                appState.currentPage = "home";
+                navigationStore.currentPage = "home";
                 return;
             }
 
             await loadTemplates();
 
             if (titleId) selectedTitleId = String(titleId);
-            else if (appState.currentTitleId)
-                selectedTitleId = String(appState.currentTitleId);
-            else if (appState.selectedTitleId)
-                selectedTitleId = String(appState.selectedTitleId);
+            else if (editorStore.currentTitleId)
+                selectedTitleId = String(editorStore.currentTitleId);
+            else if (titlesStore.selectedTitleId)
+                selectedTitleId = String(titlesStore.selectedTitleId);
 
             if (selectedTitleId && selectedTitleId !== "0")
                 await loadTitleVariables(Number(selectedTitleId));
@@ -336,13 +339,13 @@
     $effect(() => {
         if (
             !selectedChannelId &&
-            appState.settings.last_channel_id &&
-            appState.settings.last_channel_id !== "0"
+            settingsStore.settings.last_channel_id &&
+            settingsStore.settings.last_channel_id !== "0"
         ) {
-            const lastId = appState.settings.last_channel_id;
+            const lastId = settingsStore.settings.last_channel_id;
             const lastTitle =
-                appState.settings.last_channel_title || "Unknown Channel";
-            const lastHash = appState.settings.last_channel_hash;
+                settingsStore.settings.last_channel_title || "Unknown Channel";
+            const lastHash = settingsStore.settings.last_channel_hash;
 
             selectedChannelId = lastId;
             selectedChannelTitle = lastTitle;
@@ -366,7 +369,7 @@
     // Derived
     let titleOptions = $derived([
         { text: "Без тайтла", value: "0" },
-        ...appState.titles.map((t) => ({ text: t.name, value: String(t.id) })),
+        ...titlesStore.titles.map((t) => ({ text: t.name, value: String(t.id) })),
     ]);
     let templateOptions = $derived([
         { text: "Выберите шаблон", value: "" },

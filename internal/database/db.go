@@ -4,7 +4,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -284,45 +283,23 @@ func (d *Database) AddTitleVariable(titleID uint, key, value string) error {
 // If we store "/foo/bar/manga_name", and images are in "/foo/bar/manga_name/chapter1",
 // we should match if the folder path starts with the stored path.
 func (d *Database) FindTitleByPath(path string) (Title, error) {
-	var folders []TitleFolder
-	// We get all folders and check in Go, or use SQL LIKE.
-	// Since paths can be complex (backslashes etc), doing it in Go might be safer for logic customization.
-	// But for performance, let's try SQL.
-	// We want where `path` starts with `folder.Path`
-	// Actually, usually user sets a root folder for the manga.
-	// E.g. Root: C:\Manga\Naruto
-	// Chapter: C:\Manga\Naruto\Chapter 1
-	// Client path provided is likely the chapter folder.
-	// So we check if `path` contains `folder.Path`.
-
-	// Normalize path?
 	path = filepath.Clean(path)
+	var folder TitleFolder
 
-	// Fetch all folders? (Assuming not too many)
-	d.conn.Find(&folders)
+	// Optimizing to use SQL instead of in-memory loop.
+	// We want to find a folder where: input_path starts with folder.path
+	// In SQL: input_path LIKE folder.path || '%'
+	// We sort by length(path) DESC to find the most specific (longest) match.
+	// Using LOWER for case-insensitivity on Windows.
+	err := d.conn.Where("LOWER(?) LIKE LOWER(path || '%')", path).
+		Order("length(path) DESC").
+		First(&folder).Error
 
-	var bestMatch *TitleFolder
-	var maxLen int
-
-	for _, f := range folders {
-		// making sure we compare correctly
-		// Check if 'path' has prefix 'f.Path'
-		// Case insensitive for Windows?
-		// Let's rely on simple string check for now.
-		if len(f.Path) > 0 && (strings.HasPrefix(strings.ToLower(path), strings.ToLower(f.Path))) {
-			if len(f.Path) > maxLen {
-				maxLen = len(f.Path)
-				match := f // copy
-				bestMatch = &match
-			}
-		}
+	if err != nil {
+		return Title{}, err
 	}
 
-	if bestMatch != nil {
-		return d.GetTitleByID(bestMatch.TitleID)
-	}
-
-	return Title{}, gorm.ErrRecordNotFound
+	return d.GetTitleByID(folder.TitleID)
 }
 
 // --- Методы для Шаблонов ---

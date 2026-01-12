@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type Config struct {
@@ -19,7 +20,7 @@ type Config struct {
 	TelegramApiHash string `json:"telegram_app_hash"`
 }
 
-// loadConfig ищет config.json рядом с исполняемым файлом
+// loadConfig ищет config.json рядом с исполняемым файлом, а также поддерживает переменные окружения
 func Load() (*Config, error) {
 	// Получаем путь к исполняемому файлу
 	ex, err := os.Executable()
@@ -36,23 +37,54 @@ func Load() (*Config, error) {
 		configPath = "config.json"
 	}
 
+	var cfg Config
+
 	file, err := os.Open(configPath)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		defer file.Close()
+		bytesValue, _ := io.ReadAll(file)
+		if err := json.Unmarshal(bytesValue, &cfg); err != nil {
+			return nil, fmt.Errorf("ошибка парсинга JSON: %v", err)
+		}
+	} else {
+		// Если файла нет, не страшно, если все есть в ENV
+		// Но пока оставим логику как есть - файл ожидается.
+		// Хотя для улучшения можно сделать файл необязательным, если есть ENV.
+		// Вернем ошибку только если и файла нет, и ENV пустые (проверим валидацию ниже).
 	}
-	defer file.Close()
 
-	bytesValue, _ := io.ReadAll(file)
-
-	var cfg Config // Создаем локальную переменную
-	err = json.Unmarshal(bytesValue, &cfg)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка парсинга JSON: %v", err)
+	// Переопределение через переменные окружения
+	if val := os.Getenv("R2_ACCOUNT_ID"); val != "" {
+		cfg.R2AccountId = val
+	}
+	if val := os.Getenv("R2_ACCESS_KEY"); val != "" {
+		cfg.R2AccessKey = val
+	}
+	if val := os.Getenv("R2_SECRET_KEY"); val != "" {
+		cfg.R2SecretKey = val
+	}
+	if val := os.Getenv("BUCKET_NAME"); val != "" {
+		cfg.BucketName = val
+	}
+	if val := os.Getenv("PUBLIC_DOMAIN"); val != "" {
+		cfg.PublicDomain = val
+	}
+	if val := os.Getenv("TELEGRAPH_TOKEN"); val != "" {
+		cfg.TelegraphToken = val
+	}
+	if val := os.Getenv("TELEGRAM_APP_ID"); val != "" {
+		// Parse int
+		if id, err := strconv.Atoi(val); err == nil {
+			cfg.TelegramAppId = id
+		}
+	}
+	if val := os.Getenv("TELEGRAM_API_HASH"); val != "" {
+		cfg.TelegramApiHash = val
 	}
 
 	// Валидация
 	if cfg.R2AccountId == "" || cfg.R2AccessKey == "" || cfg.R2SecretKey == "" {
-		return nil, fmt.Errorf("в config.json не заполнены ключи R2")
+		return nil, fmt.Errorf("конфигурация неполная: проверьте config.json или переменные окружения (R2 keys)")
 	}
 
 	return &cfg, nil // Возвращаем готовую структуру

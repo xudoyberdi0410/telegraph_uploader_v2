@@ -14,7 +14,6 @@ import (
 
 	"github.com/gotd/td/clock"
 	"github.com/gotd/td/telegram"
-	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/auth/qrlogin"
 	"github.com/gotd/td/telegram/message"
 	"github.com/gotd/td/telegram/message/html"
@@ -163,57 +162,7 @@ func (c *Client) Stop() {
 
 // AuthFlowHandler defines the interface for UI interaction
 type AuthFlowHandler interface {
-	GetCode(ctx context.Context, sentCode *tg.AuthSentCode) (string, error)
 	GetPassword(ctx context.Context) (string, error)
-}
-
-// terminalAuthenticator manually implements auth.UserAuthenticator
-type terminalAuthenticator struct {
-	phone       string
-	flowHandler AuthFlowHandler
-}
-
-func (a terminalAuthenticator) Phone(_ context.Context) (string, error) {
-	return a.phone, nil
-}
-
-func (a terminalAuthenticator) Password(ctx context.Context) (string, error) {
-	return a.flowHandler.GetPassword(ctx)
-}
-
-func (a terminalAuthenticator) Code(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
-	return a.flowHandler.GetCode(ctx, sentCode)
-}
-
-func (a terminalAuthenticator) AcceptTermsOfService(_ context.Context, tos tg.HelpTermsOfService) error {
-	return nil
-}
-
-func (a terminalAuthenticator) SignUp(_ context.Context) (auth.UserInfo, error) {
-	return auth.UserInfo{}, fmt.Errorf("signing up is not supported")
-}
-
-func (c *Client) Login(ctx context.Context, phone string, flowHandler AuthFlowHandler) error {
-	// Wait for connection before attempting login
-	if err := c.WaitForConnection(ctx); err != nil {
-		return fmt.Errorf("failed to wait for connection: %w", err)
-	}
-
-	// Create our manual authenticator
-	authenticator := terminalAuthenticator{
-		phone:       phone,
-		flowHandler: flowHandler,
-	}
-
-	// Create the Auth Flow using the struct
-	flow := auth.NewFlow(
-		authenticator,
-		auth.SendCodeOptions{},
-	)
-
-	// We simply use the context passed. If c.client isn't running, this will fail.
-	// The retry loop in Start should ensure it's running.
-	return c.client.Auth().IfNecessary(ctx, flow)
 }
 
 // LoginQR starts the QR code login flow
