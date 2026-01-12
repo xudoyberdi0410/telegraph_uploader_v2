@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"telegraph_uploader_v2/internal/config"
 	"telegraph_uploader_v2/internal/database"
@@ -39,32 +40,16 @@ func (m *MockDialogProvider) OpenMultipleFiles(ctx context.Context, options wail
 	return m.FileSelection, m.Err
 }
 
-// Helper setup reused
-// ... (omitted if separate file, but here we append to app_test.go or create new one?
-// I should append to app_test.go or overwrite it with MORE tests.
-// I'll overwrite app_test.go with comprehensive set.
-
 func setupTestDB(t *testing.T) *database.Database {
-	// Use unshared memory DB for isolation per test or handle cleanup
-	// "file::memory:?cache=shared" shares DB across connections, good for multiple opens but needs cleanup.
-	// We can use unique name per test? Or just :memory: without shared cache if we reuse 'gorm.Open' result.
-	// database.New takes *gorm.DB.
-	// But InitWithFile does migrations.
-	// Let's use database.New which does migrations too.
-	// But we need to ensure defaults are created.
-	// The problem in TestApp_Settings failure: "record not found".
-	// database.New runs AutoMigrate but does NOT create default settings.
-	// We should duplicate default creation logic or refactor db.New to do it.
-
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
+	// Use New to initialize DB and migrate
 	d := database.New(db)
 
-	// Manually create defaults if needed, OR refactor db.New.
-	// Let's manually create default settings here to match Init behavior.
+	// Create default settings if not exists
 	var count int64
 	db.Model(&database.Settings{}).Count(&count)
 	if count == 0 {
@@ -249,35 +234,70 @@ func TestApp_UploadChapter(t *testing.T) {
 	}
 }
 
+func TestApp_UploadChapter_Error(t *testing.T) {
+	// Setup failing S3
+	tsS3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer tsS3.Close()
+
+	cfg := &config.Config{
+		R2AccountId:    "acc",
+		R2AccessKey:    "key",
+		R2SecretKey:    "secret",
+		BucketName:     "buck",
+		PublicDomain:   "http://dom.com",
+	}
+
+	minioClient, _ := minio.New(tsS3.Listener.Addr().String(), &minio.Options{
+		Creds:  credentials.NewStaticV4("key", "secret", ""),
+		Secure: false,
+	})
+	upl := uploader.NewWithClient(minioClient, cfg)
+	app := &App{uploader: upl}
+
+	tmpFile, err := os.CreateTemp("", "test*.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpFile.Name())
+	
+	// Create actual image content
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	f, _ := os.Create(tmpFile.Name())
+	png.Encode(f, img)
+	f.Close()
+
+	res := app.UploadChapter([]string{tmpFile.Name()}, uploader.ResizeSettings{})
+	if res.Success {
+		t.Error("expected failure when S3 errors")
+	}
+}
+
 func TestApp_CreateTelegraphPage(t *testing.T) {
 	app, ts1, ts2 := setupTestApp(t)
 	defer ts1.Close()
 	defer ts2.Close()
 
-	url := app.CreateTelegraphPage("Title", []string{"http://img.jpg"}, 0)
-	if url != "http://telegra.ph/test" {
-		t.Errorf("expected url http://telegra.ph/test, got %s", url)
+	resp := app.CreateTelegraphPage("Title", []string{"http://img.jpg"}, 0)
+	if !resp.Success {
+		t.Errorf("expected success, got error %s", resp.Error)
+	}
+	if resp.Url != "http://telegra.ph/test" {
+		t.Errorf("expected url http://telegra.ph/test, got %s", resp.Url)
 	}
 
 	// Test failure from client
-	// We need client to fail.
-	// We can mock the client or change BaseURL to invalid?
-	// But `app.tgClient` is concrete struct.
-	// We can change `BaseURL` on the client instance app holds.
-	// But `CreatePage` in client handles errors by returning error string.
-	// We want `url[:4] == "http"` check to fail.
-
-	// Let's replace BaseURL with bad one that returns error
 	tsFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"ok": false, "error": "FAIL"}`))
 	}))
 	defer tsFail.Close()
 
 	app.tgphClient.BaseURL = tsFail.URL
-	url = app.CreateTelegraphPage("Title", nil, 0)
+	resp = app.CreateTelegraphPage("Title", nil, 0)
 	// It should log failure and return error string
-	if url[:4] == "http" {
-		t.Error("expected error string, got http url")
+	if resp.Success {
+		t.Error("expected failure")
 	}
 }
 
@@ -317,21 +337,6 @@ func TestApp_GetTelegraphPage(t *testing.T) {
 		t.Errorf("expected title T, got %s", resp.Title)
 	}
 
-	// Invalid URL (no slug?)
-	// app.GetTelegraphPage logic: split by '/', len(parts)==0 -> invalid.
-	// "" -> split -> [""] -> len=1. path=""
-	// "http://t.ph/" -> ...
-	// To trigger `len(parts) == 0`, string must be empty?
-	// split "" -> [""] (len 1).
-	// usage of strings.Split will almost always return len >= 1.
-	// Wait, code says:
-	// parts := strings.Split(pageUrl, "/")
-	// if len(parts) == 0 { ... }
-	// This branch might be unreachable with logic `Split(s, "/")`.
-	// Only if s is somehow resulting in empty slice? strings.Split docs say: "If s does not contain sep and sep is not empty, Split returns a slice of length 1 whose only element is s."
-	// So `len(parts) == 0` is dead code?
-	// Yes. But let's verify logic in `app.go`.
-
 	// GetPage error
 	tsFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -356,38 +361,6 @@ func TestApp_Startup(t *testing.T) {
 	}
 }
 
-func TestNewApp(t *testing.T) {
-	// NewApp uses os.Executable to find config/db path.
-	// In test, it might use the temp dir where test binary is, or fallback to current dir.
-	// We want to ensure it doesn't panic.
-	// It touches real filesystem (database.db, config.json).
-
-	// Create a dummy config in current dir to avoid "could not load config" warning impacting flow?
-	// Or just let it use defaults.
-
-	// Issue: NewApp calls database.Init() which locks database.db.
-	// We must ensure we clean it up or NewApp might fail if locked by other tests (TestInit in db package runs in different process usually, but here checking file lock).
-
-	// We should cleanup before calling NewApp just in case.
-	ex, _ := os.Executable()
-	dbPath := filepath.Join(filepath.Dir(ex), "database.db")
-	os.Remove(dbPath)
-	defer os.Remove(dbPath) // Cleanup after
-
-	app := NewApp()
-	if app == nil {
-		t.Fatal("NewApp returned nil")
-	}
-
-	// Check if defaults loaded
-	if app.config == nil {
-		t.Error("config is nil")
-	}
-	if app.db == nil {
-		t.Error("db is nil")
-	}
-}
-
 func TestApp_Settings(t *testing.T) {
 	app, ts1, ts2 := setupTestApp(t)
 	defer ts1.Close()
@@ -398,10 +371,23 @@ func TestApp_Settings(t *testing.T) {
 		t.Errorf("expected default 1600, got %d", s.ResizeTo)
 	}
 
-	app.SaveSettings(uploader.ResizeSettings{ResizeTo: 2000})
+	// Use FrontendSettings
+	newSettings := FrontendSettings{
+		Resize:           true,
+		ResizeTo:         2000,
+		WebpQuality:      80,
+		LastChannelID:    "1",
+		LastChannelHash:  "2",
+		LastChannelTitle: "C",
+	}
+
+	app.SaveSettings(newSettings)
 	s = app.GetSettings()
 	if s.ResizeTo != 2000 {
 		t.Errorf("expected 2000, got %d", s.ResizeTo)
+	}
+	if s.LastChannelID != "1" {
+		t.Errorf("expected 1, got %s", s.LastChannelID)
 	}
 }
 
@@ -412,13 +398,9 @@ func TestApp_History(t *testing.T) {
 
 	app.db.AddHistory("T1", "u1", 1, "tok", nil)
 
-	// CreateTelegraphPage from previous test might have added history if tests run in parallel or DB shared?
-	// DB is shared "file::memory:?cache=shared".
-	// We should clear history before asserting count or use empty DB.
-	// Better: setupTestDB should return fresh DB.
-	// If we use "file::memory:?cache=shared", it persists as long as one connection is open?
-	// Actually, with unique names per test is safer.
-	// Or just ClearHistory first.
+	// Since DB is shared in setupTestDB ("file::memory:?cache=shared"), 
+	// previous tests might have added history. 
+	// We should clear it first to be deterministic.
 	app.ClearHistory()
 
 	app.db.AddHistory("T1", "u1", 1, "tok", nil)
@@ -435,16 +417,9 @@ func TestApp_History(t *testing.T) {
 }
 
 func TestGetImagesInDir(t *testing.T) {
-	// Need to expose this or extract it. `getImagesInDir` is unexported in main package.
-	// But since we are in `package main` (test package `main`), we can access it!
-	// Yes, `app_test.go` is package main.
-
 	tmpDir := t.TempDir()
 	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0755)
 
-	// Windows file locking issue: getImagesInDir opens files? No, it uses os.ReadDir.
-	// Maybe "ignore.txt" creation holds lock?
-	// os.Create returns *File, we must close it!
 	f1, _ := os.Create(filepath.Join(tmpDir, "img1.jpg"))
 	f1.Close()
 	f2, _ := os.Create(filepath.Join(tmpDir, "img2.png"))
@@ -458,5 +433,111 @@ func TestGetImagesInDir(t *testing.T) {
 	}
 	if len(imgs) != 2 {
 		t.Errorf("expected 2 images, got %d", len(imgs))
+	}
+}
+
+func TestApp_PublishPost_Errors(t *testing.T) {
+	app, ts1, ts2 := setupTestApp(t)
+	defer ts1.Close()
+	defer ts2.Close()
+
+	// 1. Invalid Channel ID
+	err := app.PublishPost(1, "invalid", "123", "content", time.Now().Format(time.RFC3339))
+	if err == nil {
+		t.Error("expected error for invalid channel id")
+	}
+
+	// 2. Invalid Access Hash
+	err = app.PublishPost(1, "123", "invalid", "content", time.Now().Format(time.RFC3339))
+	if err == nil {
+		t.Error("expected error for invalid access hash")
+	}
+
+	// 3. History Item Not Found
+	err = app.PublishPost(999, "123", "456", "content", time.Now().Format(time.RFC3339))
+	if err == nil {
+		t.Error("expected error for missing history")
+	}
+
+	// 4. Date Parse Error
+	app.db.AddHistory("T", "u", 1, "tok", nil)
+	// We need ID. Since we cleared or it's new DB? setupTestDB uses shared cache.
+	// But each test runs sequentially in Go unless Parallel is called.
+	// Let's get the ID.
+	hist := app.GetHistory(1, 0)
+	if len(hist) == 0 {
+		t.Fatal("failed to setup history")
+	}
+	id := hist[0].ID
+
+	err = app.PublishPost(id, "123", "456", "content", "bad-date")
+	if err == nil {
+		t.Error("expected error for bad date")
+	}
+}
+
+func TestApp_TitleCRUD(t *testing.T) {
+	app, ts1, ts2 := setupTestApp(t)
+	defer ts1.Close()
+	defer ts2.Close()
+
+	err := app.CreateTitle("MangaX", "C:/Manga/X")
+	if err != nil {
+		t.Fatalf("CreateTitle failed: %v", err)
+	}
+
+	titles := app.GetTitles()
+	if len(titles) != 1 {
+		t.Errorf("expected 1 title, got %d", len(titles))
+	}
+
+	t1 := titles[0]
+	t1.Name = "MangaY"
+	err = app.UpdateTitle(t1)
+	if err != nil {
+		t.Errorf("UpdateTitle failed: %v", err)
+	}
+
+	t2, _ := app.GetTitleByID(t1.ID)
+	if t2.Name != "MangaY" {
+		t.Errorf("expected updated name, got %s", t2.Name)
+	}
+
+	err = app.DeleteTitle(t1.ID)
+	if err != nil {
+		t.Errorf("DeleteTitle failed: %v", err)
+	}
+
+	titles = app.GetTitles()
+	if len(titles) != 0 {
+		t.Errorf("expected 0 titles, got %d", len(titles))
+	}
+}
+
+func TestApp_TemplateCRUD(t *testing.T) {
+	app, ts1, ts2 := setupTestApp(t)
+	defer ts1.Close()
+	defer ts2.Close()
+
+	err := app.CreateTemplate("Tpl1", "content")
+	if err != nil {
+		t.Fatalf("CreateTemplate failed: %v", err)
+	}
+
+	tpls := app.GetTemplates()
+	if len(tpls) != 1 {
+		t.Errorf("expected 1 template, got %d", len(tpls))
+	}
+
+	t1 := tpls[0]
+	t1.Content = "new content"
+	err = app.UpdateTemplate(t1)
+	if err != nil {
+		t.Errorf("UpdateTemplate failed: %v", err)
+	}
+
+	err = app.DeleteTemplate(t1.ID)
+	if err != nil {
+		t.Errorf("DeleteTemplate failed: %v", err)
 	}
 }

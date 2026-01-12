@@ -14,16 +14,15 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+// NOTE: createTestImage is defined in image_processor_test.go
+
 func TestNew(t *testing.T) {
 	cfg := &config.Config{
 		R2AccountId: "acc",
 		R2AccessKey: "key",
 		R2SecretKey: "secret",
 	}
-	// New uses real network potentially to discover endpoint? 
-	// No, it just configures client. But minio.New constructs URL.
-	// We can't easily mock the validation inside minio.New unless we pass bad args.
-	
+	// minio.New performs some validation on endpoint format
 	u, err := New(cfg)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
@@ -31,12 +30,15 @@ func TestNew(t *testing.T) {
 	if u.client == nil {
 		t.Error("client is nil")
 	}
+	if u.cfg != cfg {
+		t.Error("config not stored")
+	}
 }
 
 func TestUploadChapter(t *testing.T) {
 	// Mock S3 server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Read body
+		// Read body to prevent client complaints
 		_, _ = io.Copy(io.Discard, r.Body)
 
 		if r.Method == "PUT" {
@@ -45,16 +47,11 @@ func TestUploadChapter(t *testing.T) {
 			return
 		}
 		
-		// Handle potential BucketExists check (HEAD /bucket)
 		if r.Method == "HEAD" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 		
-		// Handle potential MakeBucket (PUT /bucket) - should return 200 OK
-		// But in typical flow we just PutObject.
-
-		// For GET requests (bucket check/listing), return valid XML
 		if r.Method == "GET" {
 			w.Header().Set("Content-Type", "application/xml")
 			w.WriteHeader(http.StatusOK)
@@ -97,6 +94,9 @@ func TestUploadChapter(t *testing.T) {
 	if len(result.Links) != 1 {
 		t.Error("expected 1 link")
 	}
+	if !strings.HasPrefix(result.Links[0], "http://test.com/") {
+		t.Errorf("expected link to have public domain, got %s", result.Links[0])
+	}
 
 	// Invalid file upload
 	result = uploader.UploadChapter([]string{"nonexistent.png"}, ResizeSettings{})
@@ -133,9 +133,38 @@ func TestUploadChapter_UploadError(t *testing.T) {
 	}
 }
 
-// Reuse helper
-// Note: createTestImage is in image_processor_test.go which is in same package 'uploader', so it is visible if in same directory?
-// Yes, `go test ./internal/uploader` compiles all *_test.go files together.
-// So I don't need to redeclare it if I don't overwrite image_processor_test.go.
-// BUT `image_processor_test.go` was created via write_to_file in previous step.
-// I should make sure I don't delete it. I am overwriting `r2_test.go`.
+func TestUploadChapter_PartialFailure(t *testing.T) {
+	// One good file, one bad file
+	tmpDir, _ := os.MkdirTemp("", "uploadtest_partial")
+	defer os.RemoveAll(tmpDir)
+	
+	goodPath := createTestImage(t, tmpDir, "good.png", 10, 10)
+
+badPath := "nonexistent.png"
+
+	// Mock server always succeeds for the good file
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	endpoint := ts.Listener.Addr().String()
+	minioClient, _ := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4("key", "secret", ""),
+		Secure: false,
+	})
+	
+	uploader := NewWithClient(minioClient, &config.Config{BucketName: "b", PublicDomain: "http://d"})
+
+	result := uploader.UploadChapter([]string{goodPath, badPath}, ResizeSettings{})
+	
+	// Expect failure because at least one failed
+	if result.Success {
+		t.Error("expected failure for partial error")
+	}
+
+	// Check error message contains info
+	if !strings.Contains(result.Error, "Processing failed") && !strings.Contains(result.Error, "open error") {
+		t.Errorf("expected error details, got %s", result.Error)
+	}
+}

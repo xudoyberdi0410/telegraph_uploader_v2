@@ -425,35 +425,6 @@ func (a *App) TelegramLoginQR() string {
 
 // TelegramSubmitCode вызывается из UI, когда пользователь ввел код
 func (a *App) TelegramSubmitCode(code string) {
-	// a.telegram.SubmitCode(code) - this was wrong, the old code was using a channel or direct method?
-	// Checking the diff again, it seems I overwrote:
-	/*
-		log.Printf("[App] User submitted code: %s", code)
-		// Отправляем код в канал, где его ждет метод GetCode
-		a.authCodeChan <- code
-	*/
-	// Wait, I need to check what was there before. The original file content (from view_file_outline earlier) just showed the signature.
-	// But in the replace_file_content OUTPUT (Step 35), it showed I removed `a.authCodeChan <- code`.
-	// I should revert that part.
-
-	// Actually, looking at previous context or just fixing it blindly is risky.
-	// I'll revert to what the diff showed as "original" in step 35.
-
-	// Re-reading step 35 diff:
-	// -	log.Printf("[App] User submitted code: %s", code)
-	// -	// Отправляем код в канал, где его ждет метод GetCode
-	// -	a.authCodeChan <- code
-	// +	a.telegram.SubmitCode(code)
-
-	// So I should put back the channel send. BUT, does `a.authCodeChan` exist?
-	// The open file outline didn't show fields of App explicitly in full detail (truncated).
-	// But the diff implies it was there.
-
-	// Let's restore it.
-
-	// HOWEVER, I can also just check `internal/telegram/client.go` to see if there is a SubmitCode...
-	// but easier is to restore what I broke.
-
 	log.Printf("[App] User submitted code: %s", code)
 	if a.authCodeChan != nil {
 		a.authCodeChan <- code

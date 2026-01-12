@@ -74,6 +74,17 @@ func New(cfg *config.Config) (*Client, error) {
 	}, nil
 }
 
+// NewWithClient creates a wrapper around an existing telegram.Client (useful for tests)
+func NewWithClient(client *telegram.Client, cfg *config.Config) *Client {
+	return &Client{
+		client:     client,
+		apiHash:    cfg.TelegramApiHash,
+		appID:      cfg.TelegramAppId,
+		ready:      make(chan struct{}),
+		dispatcher: tg.NewUpdateDispatcher(),
+	}
+}
+
 func (c *Client) Start(ctx context.Context) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -382,11 +393,15 @@ func (c *Client) SearchAdminChannels(ctx context.Context, query string) ([]*tg.C
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
+	return filterAdminChannels(found.Chats), nil
+}
+
+// filterAdminChannels filters a list of chats to return only channels where the user is an admin or creator.
+// This function is extracted for unit testing.
+func filterAdminChannels(chats []tg.ChatClass) []*tg.Channel {
 	var adminChannels []*tg.Channel
 
-	// ContactsSearch returns *tg.ContactsFound which contains Chats []ChatClass
-	// We need to iterate over Chats and filter for channels where we are admin.
-	for _, chat := range found.Chats {
+	for _, chat := range chats {
 		channel, ok := chat.(*tg.Channel)
 		if !ok {
 			continue
@@ -406,7 +421,7 @@ func (c *Client) SearchAdminChannels(ctx context.Context, query string) ([]*tg.C
 		}
 	}
 
-	return adminChannels, nil
+	return adminChannels
 }
 
 // ScheduleMessage schedules a message to be sent to a channel at a specific time.

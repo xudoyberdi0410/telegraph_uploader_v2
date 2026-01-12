@@ -12,12 +12,12 @@ import (
 
 func setupTestDB(t *testing.T) *Database {
 	// Use in-memory database
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	err = db.AutoMigrate(&Settings{}, &dbHistory{})
+	err = db.AutoMigrate(&Settings{}, &dbHistory{}, &Title{}, &TitleFolder{}, &TitleVariable{}, &Template{})
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
@@ -61,12 +61,12 @@ func TestHistoryOperations(t *testing.T) {
 	d := setupTestDB(t)
 
 	// Add items
-	err := d.AddHistory("Test Title 1", "http://url1", 5, "token1", nil)
+	_, err := d.AddHistory("Test Title 1", "http://url1", 5, "token1", nil)
 	if err != nil {
 		t.Fatalf("failed to add history: %v", err)
 	}
 	time.Sleep(10 * time.Millisecond) // Ensure timestamp difference
-	err = d.AddHistory("Test Title 2", "http://url2", 10, "token2", nil)
+	_, err = d.AddHistory("Test Title 2", "http://url2", 10, "token2", nil)
 	if err != nil {
 		t.Fatalf("failed to add history: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestDatabase_Errors(t *testing.T) {
 	db.Close()
 
 	// Test AddHistory on closed DB
-	err = db.AddHistory("Title", "url", 1, "tok", nil)
+	_, err = db.AddHistory("Title", "url", 1, "tok", nil)
 	if err == nil {
 	}
 
@@ -174,4 +174,173 @@ func TestDatabase_Errors(t *testing.T) {
 
 	// UpdateSettings
 	db.UpdateSettings(Settings{})
+}
+
+func TestTitleCRUD(t *testing.T) {
+	d := setupTestDB(t)
+
+	// Create
+	err := d.CreateTitle("Naruto", "C:\\Manga\\Naruto")
+	if err != nil {
+		t.Fatalf("failed to create title: %v", err)
+	}
+
+	// Get All
+	titles := d.GetTitles()
+	if len(titles) != 1 {
+		t.Errorf("expected 1 title, got %d", len(titles))
+	}
+	if titles[0].Name != "Naruto" {
+		t.Errorf("expected name 'Naruto', got %s", titles[0].Name)
+	}
+	// Check folder creation
+	if len(titles[0].Folders) != 1 {
+		t.Errorf("expected 1 folder, got %d", len(titles[0].Folders))
+	}
+	if titles[0].Folders[0].Path != "C:\\Manga\\Naruto" {
+		t.Errorf("expected path 'C:\\Manga\\Naruto', got %s", titles[0].Folders[0].Path)
+	}
+
+	// Get By ID
+	title, err := d.GetTitleByID(titles[0].ID)
+	if err != nil {
+		t.Fatalf("failed to get title by id: %v", err)
+	}
+	if title.Name != "Naruto" {
+		t.Errorf("expected name 'Naruto', got %s", title.Name)
+	}
+
+	// Update (rename)
+	title.Name = "Boruto"
+	err = d.UpdateTitle(title)
+	if err != nil {
+		t.Fatalf("failed to update title: %v", err)
+	}
+
+	title2, _ := d.GetTitleByID(title.ID)
+	if title2.Name != "Boruto" {
+		t.Errorf("expected updated name 'Boruto', got %s", title2.Name)
+	}
+
+	// Delete
+	err = d.DeleteTitle(title.ID)
+	if err != nil {
+		t.Fatalf("failed to delete title: %v", err)
+	}
+
+	titles = d.GetTitles()
+	if len(titles) != 0 {
+		t.Errorf("expected 0 titles after delete, got %d", len(titles))
+	}
+}
+
+func TestTitleVariables(t *testing.T) {
+	d := setupTestDB(t)
+	d.CreateTitle("Manga", "")
+	titles := d.GetTitles()
+	titleID := titles[0].ID
+
+	err := d.AddTitleVariable(titleID, "Author", "Kishimoto")
+	if err != nil {
+		t.Fatalf("failed to add variable: %v", err)
+	}
+
+	tWithVars, _ := d.GetTitleByID(titleID)
+	if len(tWithVars.Variables) != 1 {
+		t.Errorf("expected 1 variable, got %d", len(tWithVars.Variables))
+	}
+	if tWithVars.Variables[0].Key != "Author" || tWithVars.Variables[0].Value != "Kishimoto" {
+		t.Errorf("variable content mismatch: %v", tWithVars.Variables[0])
+	}
+}
+
+func TestFindTitleByPath(t *testing.T) {
+	d := setupTestDB(t)
+
+	d.CreateTitle("Naruto", "C:\\Manga\\Naruto")
+	d.CreateTitle("Bleach", "C:\\Manga\\Bleach")
+
+	// Match exact root
+	title, err := d.FindTitleByPath("C:\\Manga\\Naruto")
+	if err != nil {
+		t.Errorf("failed to find exact match: %v", err)
+	}
+	if title.Name != "Naruto" {
+		t.Errorf("expected Naruto, got %s", title.Name)
+	}
+
+	// Match subdirectory
+	title, err = d.FindTitleByPath("C:\\Manga\\Naruto\\Vol1\\Ch1")
+	if err != nil {
+		t.Errorf("failed to find subdir match: %v", err)
+	}
+	if title.Name != "Naruto" {
+		t.Errorf("expected Naruto, got %s", title.Name)
+	}
+
+	// Case insensitive match (important for Windows)
+	title, err = d.FindTitleByPath("c:\\manga\\bleach\\chapter_500")
+	if err != nil {
+		t.Errorf("failed to find case-insensitive match: %v", err)
+	}
+	if title.Name != "Bleach" {
+		t.Errorf("expected Bleach, got %s", title.Name)
+	}
+
+	// No match
+	_, err = d.FindTitleByPath("C:\\Other\\OnePiece")
+	if err == nil {
+		t.Error("expected error for no match")
+	}
+}
+
+func TestTemplateCRUD(t *testing.T) {
+	d := setupTestDB(t)
+
+	// Create
+	err := d.CreateTemplate("Default", "<p>Hello</p>")
+	if err != nil {
+		t.Fatalf("failed to create template: %v", err)
+	}
+
+	// Get All
+	tpls := d.GetTemplates()
+	if len(tpls) != 1 {
+		t.Errorf("expected 1 template, got %d", len(tpls))
+	}
+	if tpls[0].Name != "Default" {
+		t.Errorf("expected name 'Default', got %s", tpls[0].Name)
+	}
+
+	// Get By ID
+	tpl, err := d.GetTemplateByID(tpls[0].ID)
+	if err != nil {
+		t.Fatalf("failed to get by id: %v", err)
+	}
+	if tpl.Content != "<p>Hello</p>" {
+		t.Errorf("content mismatch")
+	}
+
+	// Update
+	tpl.Content = "<p>World</p>"
+	err = d.UpdateTemplate(tpl)
+	if err != nil {
+		t.Fatalf("failed to update: %v", err)
+	}
+
+	tpl2, _ := d.GetTemplateByID(tpl.ID)
+	if tpl2.Content != "<p>World</p>" {
+		t.Errorf("expected updated content")
+	}
+
+	// Delete
+	err = d.DeleteTemplate(tpl.ID)
+	if err != nil {
+		t.Fatalf("failed to delete: %v", err)
+	}
+
+	tpls = d.GetTemplates()
+	if len(tpls) != 0 {
+		t.Errorf("expected 0 templates, got %d", len(tpls))
+	}
 }
