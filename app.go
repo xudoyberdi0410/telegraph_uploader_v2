@@ -31,6 +31,9 @@ type App struct {
 	mangaService *service.MangaService
 	pubService   *service.PublicationService
 	
+	// Infrastructure
+	r2Uploader *uploader.R2Uploader
+
 	// Repositories (Direct access for simple CRUD)
 	settingsRepo repository.SettingsRepository
 	historyRepo  repository.HistoryRepository
@@ -99,6 +102,7 @@ func NewApp() *App {
 		config:           cfg,
 		mangaService:     mangaService,
 		pubService:       pubService,
+		r2Uploader:       r2Uploader,
 		settingsRepo:     settingsRepo,
 		historyRepo:      historyRepo,
 		titleRepo:        titleRepo,
@@ -148,6 +152,20 @@ func (a *App) UploadChapter(filePaths []string, resizeSettings uploader.ResizeSe
 	}
 
 	return result
+}
+
+func (a *App) ListFiles() ([]uploader.RemoteFile, error) {
+	if a.r2Uploader == nil {
+		return nil, fmt.Errorf("uploader service not available")
+	}
+	return a.r2Uploader.ListAllFiles(a.ctx)
+}
+
+func (a *App) DeleteFiles(filenames []string) error {
+	if a.r2Uploader == nil {
+		return fmt.Errorf("uploader service not available")
+	}
+	return a.r2Uploader.DeleteFiles(a.ctx, filenames)
 }
 
 func (a *App) CreateTelegraphPage(title string, imageUrls []string, titleID int) CreatePageResponse {

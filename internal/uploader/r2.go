@@ -36,6 +36,13 @@ type R2Uploader struct {
 	cacheRepo repository.ImageCacheRepository
 }
 
+type RemoteFile struct {
+	Name         string `json:"name"`
+	LastModified int64  `json:"last_modified"` // Unix timestamp
+	Size         int64  `json:"size"`
+	Url          string `json:"url"`
+}
+
 type ResizeSettings struct {
 	Resize      bool `json:"resize"`
 	ResizeTo    int  `json:"resize_to"`
@@ -69,6 +76,66 @@ func NewWithClient(client *minio.Client, cfg *config.Config, cacheRepo repositor
 		cfg:       cfg,
 		cacheRepo: cacheRepo,
 	}
+}
+
+// ListAllFiles returns all files from the bucket
+func (u *R2Uploader) ListAllFiles(ctx context.Context) ([]RemoteFile, error) {
+	var files []RemoteFile
+
+	opts := minio.ListObjectsOptions{
+		Recursive: true,
+	}
+
+	objectCh := u.client.ListObjects(ctx, u.cfg.BucketName, opts)
+
+	domain := strings.TrimRight(u.cfg.PublicDomain, "/")
+
+	for object := range objectCh {
+		if object.Err != nil {
+			return nil, object.Err
+		}
+
+		files = append(files, RemoteFile{
+			Name:         object.Key,
+			LastModified: object.LastModified.Unix(),
+			Size:         object.Size,
+			Url:          fmt.Sprintf("%s/%s", domain, object.Key),
+		})
+	}
+
+	return files, nil
+}
+
+// DeleteFiles removes multiple files from the bucket
+func (u *R2Uploader) DeleteFiles(ctx context.Context, filenames []string) error {
+	objectsCh := make(chan minio.ObjectInfo)
+
+	go func() {
+		defer close(objectsCh)
+		for _, name := range filenames {
+			objectsCh <- minio.ObjectInfo{
+				Key: name,
+			}
+		}
+	}()
+
+	opts := minio.RemoveObjectsOptions{
+		// GovernanceBypass: true, // R2 does not support this
+	}
+
+	errorCh := u.client.RemoveObjects(ctx, u.cfg.BucketName, objectsCh, opts)
+
+	// Collect errors
+	var errs []string
+	for err := range errorCh {
+		errs = append(errs, fmt.Sprintf("failed to remove %s: %v", err.ObjectName, err.Err))
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("errors deleting files: %s", strings.Join(errs, "; "))
+	}
+
+	return nil
 }
 
 // UploadChapter теперь использует errgroup для параллельной загрузки
@@ -153,6 +220,9 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 
 			// ШАГ 3: Формирование ссылки
 			domain := strings.TrimRight(u.cfg.PublicDomain, "/")
+			if !strings.HasPrefix(domain, "http") {
+				domain = "https://" + domain
+			}
 			finalUrl := fmt.Sprintf("%s/%s", domain, processed.FileName)
 
 			// --- НОВАЯ ЛОГИКА: СОХРАНЕНИЕ В КЭШ ---
