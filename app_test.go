@@ -156,17 +156,19 @@ func setupTestApp(t *testing.T) (*App, *httptest.Server, *httptest.Server) {
 
 	pubService := service.NewPublicationService(tgClient, tgApp, historyRepo, titleRepo)
 
+	pwdChan := make(chan string)
 	app := &App{
-		ctx:          context.Background(),
-		config:       cfg,
-		mangaService: mangaService,
-		pubService:   pubService,
-		settingsRepo: settingsRepo,
-		historyRepo:  historyRepo,
-		titleRepo:    titleRepo,
-		templateRepo: templateRepo,
-		dialogs:      &MockDialogProvider{},
-		authPasswordChan: make(chan string),
+		ctx:              context.Background(),
+		config:           cfg,
+		mangaService:     mangaService,
+		pubService:       pubService,
+		settingsRepo:     settingsRepo,
+		historyRepo:      historyRepo,
+		titleRepo:        titleRepo,
+		templateRepo:     templateRepo,
+		dialogs:          &MockDialogProvider{},
+		authPasswordChan: pwdChan,
+		authHandler:      &WailsAuthHandler{passwordChan: pwdChan},
 	}
 
 	return app, tsTelegraph, tsS3

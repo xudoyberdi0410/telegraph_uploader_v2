@@ -117,10 +117,6 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.authHandler.SetContext(ctx)
-	// Wire the channels: App writes to its channel, AuthHandler reads from it
-	// Actually, let's share the channel instance or link them.
-	// In NewApp I created a new channel for authHandler, but App uses authPasswordChan.
-	// Let's fix NewApp to share the same channel.
 	log.Println("[App] Application startup complete")
 
 	if a.telegram != nil {
