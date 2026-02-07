@@ -27,7 +27,8 @@ func TestInitWithFile(t *testing.T) {
 }
 
 func TestInitWithFile_Error(t *testing.T) {
-	_, err := InitWithFile(":")
+	// Use a directory as path, which should cause an error for sqlite open
+	_, err := InitWithFile(t.TempDir())
 	if err == nil {
 		t.Error("expected error for invalid path")
 	}

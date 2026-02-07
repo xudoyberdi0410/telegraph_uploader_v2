@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"telegraph_uploader_v2/internal/database"
 	"telegraph_uploader_v2/internal/repository"
-	"telegraph_uploader_v2/internal/telegraph"
 	"telegraph_uploader_v2/internal/telegram"
+	"telegraph_uploader_v2/internal/telegraph"
 )
 
 type PublicationService struct {
@@ -44,12 +45,12 @@ func (s *PublicationService) CreatePage(title string, images []string, titleID i
 		u := uint(titleID)
 		tID = &u
 	}
-	// TODO: Pass tgphToken if needed, or get from somewhere. 
-	// In App it was `a.config.TelegraphToken`. 
+	// TODO: Pass tgphToken if needed, or get from somewhere.
+	// In App it was `a.config.TelegraphToken`.
 	// But `tgClient` has the token. `s.tgClient.Token`.
-	
+
 	id, err := s.historyRepo.Add(title, url, len(images), s.tgClient.Token, tID)
-	
+
 	return PageResult{URL: url, HistoryID: id}, err
 }
 
@@ -61,6 +62,19 @@ func (s *PublicationService) GetPage(pageUrl string) (string, []string, error) {
 	parts := strings.Split(pageUrl, "/")
 	path := parts[len(parts)-1]
 	return s.tgClient.GetPage(path)
+}
+
+func applyVariables(content string, variables []database.TitleVariable) string {
+	replacerArgs := make([]string, 0, len(variables)*2)
+	for _, v := range variables {
+		if v.Key != "" {
+			replacerArgs = append(replacerArgs, "{{"+v.Key+"}}", v.Value)
+		}
+	}
+	if len(replacerArgs) > 0 {
+		return strings.NewReplacer(replacerArgs...).Replace(content)
+	}
+	return content
 }
 
 func (s *PublicationService) PublishPost(ctx context.Context, historyID uint, channelID int64, accessHash int64, content string, scheduledTime time.Time) error {
@@ -78,11 +92,7 @@ func (s *PublicationService) PublishPost(ctx context.Context, historyID uint, ch
 	if item.TitleID != nil && *item.TitleID > 0 {
 		title, err := s.titleRepo.GetByID(*item.TitleID)
 		if err == nil {
-			for _, v := range title.Variables {
-				if v.Key != "" {
-					content = strings.ReplaceAll(content, "{{"+v.Key+"}}", v.Value)
-				}
-			}
+			content = applyVariables(content, title.Variables)
 		}
 	}
 
