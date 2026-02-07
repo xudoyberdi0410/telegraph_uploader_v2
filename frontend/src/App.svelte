@@ -19,8 +19,6 @@
     import Storage from "./views/Storage.svelte";
 
     import { navigationStore } from "./stores/navigation.svelte";
-
-    // let currentPage = $state("home"); // Removed local state
 </script>
 
 <div class="app-layout">
