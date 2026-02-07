@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -127,4 +128,97 @@ func TestFileLoader_WriteError(t *testing.T) {
 	handler.ServeHTTP(fw, req)
 	// We just want to ensure it doesn't panic and executes the error path (which logs)
 	// Coverage will show if it hit.
+}
+
+func TestFileLoader_Extensions(t *testing.T) {
+	handler := NewFileLoader()
+
+	tests := []struct {
+		name         string
+		path         string
+		expectedCode int
+	}{
+		{"Allowed JPG", "test.jpg", http.StatusNotFound}, // 404 because file doesn't exist, but passed extension check
+		{"Allowed PNG", "test.png", http.StatusNotFound},
+		{"Allowed WEBP", "test.webp", http.StatusNotFound},
+		{"Disallowed TXT", "test.txt", http.StatusForbidden},
+		{"Disallowed No Ext", "testfile", http.StatusForbidden},
+		{"Disallowed PHP", "script.php", http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, _ := http.NewRequest("GET", "/thumbnail/"+tt.path, nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+			if rr.Code != tt.expectedCode {
+				t.Errorf("%s: expected status %d, got %d", tt.name, tt.expectedCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestFileLoader_IsDirectory(t *testing.T) {
+	handler := NewFileLoader()
+
+	// Use current directory
+	req, _ := http.NewRequest("GET", "/thumbnail/.", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// "." will be Cleaned to "." which has no allowed extension, so it should be forbidden by extension check first
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for directory '.', got %d", rr.Code)
+	}
+}
+
+func TestFileLoader_DirectoryWithImageExt(t *testing.T) {
+	handler := NewFileLoader()
+
+	dirName := "testdir.jpg"
+	err := os.Mkdir(dirName, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(dirName)
+
+	req, _ := http.NewRequest("GET", "/thumbnail/"+dirName, nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for directory, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Is a directory") {
+		t.Errorf("expected 'Is a directory' error message, got %s", rr.Body.String())
+	}
+}
+
+func TestFileLoader_PathTraversal(t *testing.T) {
+	handler := NewFileLoader()
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"Simple traversal", "/thumbnail/../../etc/passwd"},
+		{"Encoded traversal", "/thumbnail/..%2f..%2fetc%2fpasswd"},
+		{"Traversal with image ext", "/thumbnail/../../etc/passwd.jpg"},
+		{"Mixed slashes", "/thumbnail/..\\..\\etc\\passwd"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, _ := http.NewRequest("GET", tt.path, nil)
+			// Manually set Path to avoid cleaning by NewRequest
+			req.URL.Path = tt.path
+
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusForbidden {
+				t.Errorf("%s: expected 403, got %d", tt.name, rr.Code)
+			}
+		})
+	}
 }
