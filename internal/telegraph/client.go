@@ -53,7 +53,7 @@ func (c *Client) CreatePage(title string, imageUrls []string) string {
 		}
 		// Запоминаем токен в памяти клиента, чтобы не создавать аккаунт каждый раз
 		c.Token = token
-		fmt.Println("ВНИМАНИЕ: Создан новый временный токен Telegraph:", token)
+		fmt.Println("ВНИМАНИЕ: Создан новый временный аккаунт Telegraph")
 	}
 
 	content := c.imagesToNodes(imageUrls)
