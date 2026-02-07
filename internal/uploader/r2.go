@@ -78,6 +78,14 @@ func NewWithClient(client *minio.Client, cfg *config.Config, cacheRepo repositor
 	}
 }
 
+func (u *R2Uploader) normalizeDomain() string {
+	domain := strings.TrimRight(u.cfg.PublicDomain, "/")
+	if !strings.HasPrefix(domain, "http") {
+		domain = "https://" + domain
+	}
+	return domain
+}
+
 // ListAllFiles returns all files from the bucket
 func (u *R2Uploader) ListAllFiles(ctx context.Context) ([]RemoteFile, error) {
 	var files []RemoteFile
@@ -88,7 +96,7 @@ func (u *R2Uploader) ListAllFiles(ctx context.Context) ([]RemoteFile, error) {
 
 	objectCh := u.client.ListObjects(ctx, u.cfg.BucketName, opts)
 
-	domain := strings.TrimRight(u.cfg.PublicDomain, "/")
+	domain := u.normalizeDomain()
 
 	for object := range objectCh {
 		if object.Err != nil {
@@ -219,10 +227,7 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 			}
 
 			// ШАГ 3: Формирование ссылки
-			domain := strings.TrimRight(u.cfg.PublicDomain, "/")
-			if !strings.HasPrefix(domain, "http") {
-				domain = "https://" + domain
-			}
+			domain := u.normalizeDomain()
 			finalUrl := fmt.Sprintf("%s/%s", domain, processed.FileName)
 
 			// --- НОВАЯ ЛОГИКА: СОХРАНЕНИЕ В КЭШ ---
