@@ -77,13 +77,13 @@ class EditorStore {
             }
         }
 
+        const existingPaths = new Set(this.images.map(img => img.originalPath));
         const newImages = paths
             .map((fullPath) => {
                 if (!fullPath.match(/\.(jpg|jpeg|png|webp)$/i)) return null;
 
                 const fileName = fullPath.replace(/^.*[\\/]/, "");
-                const exists = this.images.find(img => img.originalPath === fullPath);
-                if (exists) return null;
+                if (existingPaths.has(fullPath)) return null;
 
                 return {
                     id: fullPath,
