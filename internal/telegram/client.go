@@ -39,7 +39,7 @@ type Client struct {
 }
 
 func New(cfg *config.Config) (*Client, error) {
-	log.Printf("[Telegram] App ID: %d, API Hash: %s", cfg.TelegramAppId, cfg.TelegramApiHash)
+	log.Printf("[Telegram] App ID: %d", cfg.TelegramAppId)
 	sessionDir, _ := os.Getwd()
 	sessionPath := filepath.Join(sessionDir, "telegram-session.json")
 	log.Printf("[Telegram] Session path: %s", sessionPath)
@@ -193,8 +193,6 @@ func (c *Client) LoginQR(ctx context.Context, displayQR func(qrImage []byte), fl
 	loggedIn := qrlogin.OnLoginToken(c.dispatcher)
 
 	_, err := c.client.QR().Auth(ctx, loggedIn, func(ctx context.Context, token qrlogin.Token) error {
-		log.Printf("[Telegram] QR Code token received: %s...", token.URL())
-
 		code, err := qr.Encode(token.URL(), qr.L)
 		if err != nil {
 			return fmt.Errorf("failed to encode QR: %w", err)
