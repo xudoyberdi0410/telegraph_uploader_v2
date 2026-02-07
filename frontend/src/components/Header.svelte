@@ -1,6 +1,7 @@
 <script>
     import { TextField, Button, Icon, Dialog } from "m3-svelte";
     import { titlesStore } from "../stores/titles.svelte";
+    import { OpenFolderDialog } from "../../wailsjs/go/main/App";
 
     // Icons
     import iconFolder from "@ktibow/iconset-material-symbols/folder-open-outline";
@@ -26,21 +27,6 @@
         showNewTitleDialog = false;
     }
 
-    async function handleSelectTitleFolder() {
-        try {
-            const result = await onSelectFolder?.(true); // Helper hack or separate method needed?
-            // Wait, onSelectFolder in props calls appState.selectFolderAction which targets main content.
-            // We need a direct way to open folder dialog without triggering appState logic.
-            // Let's use Wails Runtime directly here or add a helper in props/store.
-            // Actually, we can just call OpenFolderDialog from Wails JS directly here.
-        } catch (e) {
-            console.error(e);
-        }
-    }
-</script>
-
-<script module>
-    import { OpenFolderDialog } from "../../wailsjs/go/main/App";
     async function pickFolder() {
        try {
             const res = await OpenFolderDialog();
@@ -48,6 +34,13 @@
        } catch(e) {
            return "";
        }
+    }
+
+    async function handleSelectNewTitleFolder() {
+        const path = await pickFolder();
+        if (path) {
+            newTitleFolder = path;
+        }
     }
 </script>
 
@@ -116,10 +109,7 @@
                  readonly
                  style="flex-grow: 1;"
             />
-            <Button variant="tonal" onclick={async () => {
-                const path = await pickFolder();
-                if (path) newTitleFolder = path;
-            }}>
+            <Button variant="tonal" onclick={handleSelectNewTitleFolder}>
                 <Icon icon={iconFolder} />
             </Button>
         </div>
