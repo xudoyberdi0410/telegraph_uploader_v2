@@ -18,12 +18,12 @@ type ProcessedImage struct {
 	Size     int64
 }
 
-// processImage берет путь, обрабатывает картинку и возвращает буфер + имя
-func processImage(srcPath string, resizeSettings ResizeSettings) (*ProcessedImage, error) {
+// processImage берет данные и имя файла, обрабатывает картинку и возвращает буфер + имя
+func processImage(data []byte, filename string, resizeSettings ResizeSettings) (*ProcessedImage, error) {
 	// 1. Открытие
-	img, err := imaging.Open(srcPath, imaging.AutoOrientation(true))
+	img, err := imaging.Decode(bytes.NewReader(data), imaging.AutoOrientation(true))
 	if err != nil {
-		return nil, fmt.Errorf("open error: %w", err)
+		return nil, fmt.Errorf("decode error: %w", err)
 	}
 
 	// 2. Ресайз (бизнес-логика: ширина > 1200)
@@ -42,7 +42,7 @@ func processImage(srcPath string, resizeSettings ResizeSettings) (*ProcessedImag
 	}
 
 	// 4. Генерация имени
-	originalName := filepath.Base(srcPath)
+	originalName := filename
 	ext := filepath.Ext(originalName)
 	nameWithoutExt := strings.TrimSuffix(originalName, ext)
 	fileName := fmt.Sprintf("%d_%s.webp", time.Now().UnixNano(), nameWithoutExt)

@@ -50,7 +50,12 @@ func TestProcessImage(t *testing.T) {
 		WebpQuality: 80,
 	}
 
-	processed, err := processImage(imgPath, settings)
+	data, err := os.ReadFile(imgPath)
+	if err != nil {
+		t.Fatalf("failed to read test image: %v", err)
+	}
+
+	processed, err := processImage(data, filepath.Base(imgPath), settings)
 	if err != nil {
 		t.Fatalf("processImage failed: %v", err)
 	}
@@ -94,7 +99,12 @@ func TestProcessImage_NoResize(t *testing.T) {
 		WebpQuality: 80,
 	}
 
-	processed, err := processImage(imgPath, settings)
+	data, err := os.ReadFile(imgPath)
+	if err != nil {
+		t.Fatalf("failed to read test image: %v", err)
+	}
+
+	processed, err := processImage(data, filepath.Base(imgPath), settings)
 	if err != nil {
 		t.Fatalf("processImage failed: %v", err)
 	}
@@ -120,15 +130,24 @@ func TestProcessImage_InvalidFile(t *testing.T) {
 	txtPath := filepath.Join(tmpDir, "not_an_image.txt")
 	os.WriteFile(txtPath, []byte("I am not an image"), 0644)
 
-	_, err = processImage(txtPath, ResizeSettings{})
+	data, err := os.ReadFile(txtPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = processImage(data, "not_an_image.txt", ResizeSettings{})
 	if err == nil {
 		t.Error("expected error for text file")
 	}
 
-	// Non-existent file
-	_, err = processImage(filepath.Join(tmpDir, "missing.png"), ResizeSettings{})
+	// For non-existent file, we can't read it, so processImage can't be called.
+	// We should test that processImage handles nil/empty data or invalid data gracefully if we want.
+	// But the original test was testing file opening failure.
+	// Since processImage no longer opens file, we can't test "missing file" error from processImage.
+	// But we can test empty byte slice.
+	_, err = processImage([]byte{}, "missing.png", ResizeSettings{})
 	if err == nil {
-		t.Error("expected error for missing file")
+		t.Error("expected error for empty data")
 	}
 }
 
@@ -143,7 +162,12 @@ func TestProcessImage_CorruptedImage(t *testing.T) {
 	badPath := filepath.Join(tmpDir, "bad.png")
 	os.WriteFile(badPath, []byte("\x89PNG\r\n\x1a\n...broken..."), 0644)
 
-	_, err = processImage(badPath, ResizeSettings{})
+	data, err := os.ReadFile(badPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = processImage(data, "bad.png", ResizeSettings{})
 	if err == nil {
 		t.Error("expected error for corrupted image")
 	}

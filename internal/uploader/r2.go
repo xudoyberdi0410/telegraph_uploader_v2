@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -174,14 +173,18 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 			}
 
 			// --- НОВАЯ ЛОГИКА: ХЭШИРОВАНИЕ ---
-			// 1. Считаем хэш исходного файла
-			fileHash, err := calculateFileHash(path)
+
+			// 0. Читаем файл в память (ОПТИМИЗАЦИЯ: одно чтение вместо двух)
+			fileData, err := os.ReadFile(path)
 			if err != nil {
 				mu.Lock()
-				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Hash error: %v", filepath.Base(path), err))
+				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Read error: %v", filepath.Base(path), err))
 				mu.Unlock()
 				return nil
 			}
+
+			// 1. Считаем хэш
+			fileHash := calculateHash(fileData)
 
 			// 2. Проверяем в базе
 			if u.cacheRepo != nil { // Check if repo is available
@@ -199,7 +202,7 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 			// ----------------------------------
 
 			// ШАГ 1: Обработка изображения
-			processed, err := processImage(path, resizeSettings)
+			processed, err := processImage(fileData, filepath.Base(path), resizeSettings)
 			if err != nil {
 				mu.Lock()
 				uploadErrors = append(uploadErrors, fmt.Sprintf("[%s] Processing failed: %v", filepath.Base(path), err))
@@ -256,18 +259,8 @@ func (u *R2Uploader) UploadChapter(ctx context.Context, filePaths []string, resi
 	return UploadResult{Success: true, Links: uploadedLinks}
 }
 
-func calculateFileHash(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
-	}
-
-	return hex.EncodeToString(hash.Sum(nil)), nil
+func calculateHash(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
 }
 

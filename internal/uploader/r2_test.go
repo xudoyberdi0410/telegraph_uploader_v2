@@ -165,7 +165,7 @@ func TestUploadChapter_PartialFailure(t *testing.T) {
 	}
 
 	// Check error message contains info
-	if !strings.Contains(result.Error, "Processing failed") && !strings.Contains(result.Error, "open error") && !strings.Contains(result.Error, "Hash error") {
+	if !strings.Contains(result.Error, "Processing failed") && !strings.Contains(result.Error, "open error") && !strings.Contains(result.Error, "Hash error") && !strings.Contains(result.Error, "Read error") {
 		t.Errorf("expected error details, got %s", result.Error)
 	}
 }
