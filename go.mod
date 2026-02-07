@@ -91,4 +91,3 @@ require (
 	modernc.org/sqlite v1.42.2 // indirect
 )
 
-// replace github.com/wailsapp/wails/v2 v2.11.0 => C:\Users\Khudoberdi\go\pkg\mod

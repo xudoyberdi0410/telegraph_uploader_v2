@@ -16,7 +16,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	err = db.AutoMigrate(&database.Settings{}, &database.HistoryEntry{}, &database.Title{}, &database.TitleFolder{}, &database.TitleVariable{}, &database.Template{})
+	err = db.AutoMigrate(&database.Settings{}, &database.HistoryEntry{}, &database.Title{}, &database.TitleFolder{}, &database.TitleVariable{}, &database.Template{}, &database.UploadedFile{})
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
@@ -180,5 +180,49 @@ func TestTemplateRepo(t *testing.T) {
 	tpls, _ = repo.GetAll()
 	if len(tpls) != 0 {
 		t.Errorf("expected 0")
+	}
+}
+
+func TestImageCacheRepo(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewImageCacheRepository(db)
+
+	hash := "test-hash"
+	url := "https://example.com/image.jpg"
+
+	// Test GetURL - empty
+	gotURL, found := repo.GetURL(hash)
+	if found {
+		t.Errorf("expected not found, but got %s", gotURL)
+	}
+
+	// Test Save
+	err := repo.Save(hash, url)
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Test GetURL - found
+	gotURL, found = repo.GetURL(hash)
+	if !found {
+		t.Errorf("expected found, but not found")
+	}
+	if gotURL != url {
+		t.Errorf("expected %s, got %s", url, gotURL)
+	}
+
+	// Test Save update
+	newURL := "https://example.com/new-image.jpg"
+	err = repo.Save(hash, newURL)
+	if err != nil {
+		t.Fatalf("Save update failed: %v", err)
+	}
+
+	gotURL, found = repo.GetURL(hash)
+	if !found {
+		t.Errorf("expected found after update, but not found")
+	}
+	if gotURL != newURL {
+		t.Errorf("expected %s, got %s", newURL, gotURL)
 	}
 }
