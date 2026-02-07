@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupTestDB(t *testing.T) *gorm.DB {
+func setupTestDB(t testing.TB) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
